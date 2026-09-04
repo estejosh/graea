@@ -1,0 +1,25 @@
+name: order_edit
+description: >
+  Pressing "Order" edits the existing message rather than sending a new one.
+  Catches the edit_as_new bug.
+bot: null
+source_path: graea/demo
+steps:
+  - name: start
+    action:
+      kind: send_command
+      text: /start
+    expect:
+      - kind: has_inline_button
+        value: Order
+  - name: press_order
+    action:
+      kind: press_button
+      button_text: Order
+    expect:
+      - kind: message_edited
+      - kind: reply_count
+        value: 0
+        op: "=="
+      - kind: vision_sees
+        value: Order placed

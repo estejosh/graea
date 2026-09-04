@@ -1,0 +1,17 @@
+name: silent_help
+description: >
+  /help replies with help text. Catches the silent_command bug (/help never
+  answers).
+bot: null
+source_path: graea/demo
+steps:
+  - name: help
+    action:
+      kind: send_command
+      text: /help
+    expect:
+      - kind: reply_count
+        value: 1
+        op: ">="
+      - kind: text_contains
+        value: "/start"

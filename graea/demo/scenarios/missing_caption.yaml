@@ -1,0 +1,21 @@
+name: missing_caption
+description: >
+  The "Status" photo carries a caption. Catches the missing_caption bug.
+bot: null
+source_path: graea/demo
+steps:
+  - name: start
+    action:
+      kind: send_command
+      text: /start
+    expect: []
+  - name: press_status
+    action:
+      kind: press_button
+      button_text: Status
+    expect:
+      - kind: media_type
+        value: photo
+      - kind: caption_contains
+        value: Current status
+      - kind: vision_no_issues

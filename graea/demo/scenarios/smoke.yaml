@@ -1,0 +1,86 @@
+name: smoke
+description: >
+  End-to-end happy path through the demo bot: /start, Order, /help, /menu,
+  reply-keyboard echo, plain-text echo, and the Status photo. Run with
+  BUGS unset (or empty) — every assertion should pass.
+bot: null
+source_path: graea/demo
+steps:
+  - name: start
+    action:
+      kind: send_command
+      text: /start
+    expect:
+      - kind: text_contains
+        value: Welcome
+      - kind: markdown_rendered
+      - kind: keyboard_shape
+        value: [3]
+      - kind: has_inline_button
+        value: Order
+      - kind: has_inline_button
+        value: Status
+      - kind: has_inline_button
+        value: Help
+      - kind: vision_no_issues
+
+  - name: press_order
+    action:
+      kind: press_button
+      button_text: Order
+    expect:
+      - kind: message_edited
+      - kind: reply_count
+        value: 0
+        op: "=="
+      - kind: vision_sees
+        value: Order placed
+
+  - name: help
+    action:
+      kind: send_command
+      text: /help
+    expect:
+      - kind: reply_count
+        value: 1
+        op: ">="
+
+  - name: menu
+    action:
+      kind: send_command
+      text: /menu
+    expect:
+      - kind: has_reply_keyboard
+
+  - name: choose_a
+    action:
+      kind: send_text
+      text: "A"
+    expect:
+      - kind: text_contains
+        value: "You chose A"
+
+  - name: plain_text
+    action:
+      kind: send_text
+      text: "hello there"
+    expect:
+      - kind: text_contains
+        value: "You said:"
+
+  - name: start_again
+    action:
+      kind: send_command
+      text: /start
+    expect: []
+
+  - name: press_status
+    action:
+      kind: press_button
+      button_text: Status
+    expect:
+      - kind: media_type
+        value: photo
+      - kind: caption_contains
+        value: Current status
+      - kind: vision_no_issues

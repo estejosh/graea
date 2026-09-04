@@ -1,0 +1,20 @@
+name: start_markdown
+description: >
+  /start renders bold MarkdownV2 correctly and shows a welcome message.
+  Catches the raw_markdown bug (sent with no parse_mode -> literal asterisks).
+bot: null
+source_path: graea/demo
+steps:
+  - name: start
+    action:
+      kind: send_command
+      text: /start
+    expect:
+      - kind: text_contains
+        value: Welcome
+      - kind: markdown_rendered
+      - kind: keyboard_shape
+        value: [3]
+      - kind: has_inline_button
+        value: Order
+      - kind: vision_no_issues

@@ -1,0 +1,18 @@
+name: truncated_button
+description: >
+  /start's "Order" button label is short and not visually truncated.
+  Catches the truncated_button bug (60-char first label).
+bot: null
+source_path: graea/demo
+steps:
+  - name: start
+    action:
+      kind: send_command
+      text: /start
+    expect:
+      - kind: has_inline_button
+        value: "^Order$"
+        case_sensitive: true
+      - kind: vision_no_issues
+      - kind: vision_sees
+        value: Order

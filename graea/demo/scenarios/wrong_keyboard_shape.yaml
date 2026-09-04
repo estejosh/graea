@@ -1,0 +1,15 @@
+name: wrong_keyboard_shape
+description: >
+  /start's inline keyboard is one row of three buttons, not three rows of
+  one. Catches the wrong_keyboard_shape bug.
+bot: null
+source_path: graea/demo
+steps:
+  - name: start
+    action:
+      kind: send_command
+      text: /start
+    expect:
+      - kind: keyboard_shape
+        value: [3]
+      - kind: vision_no_issues

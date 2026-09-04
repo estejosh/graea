@@ -1,0 +1,19 @@
+name: dead_button
+description: >
+  Pressing "Order" answers the callback query (no stuck loading spinner).
+  Catches the dead_button bug.
+bot: null
+source_path: graea/demo
+steps:
+  - name: start
+    action:
+      kind: send_command
+      text: /start
+    expect: []
+  - name: press_order
+    action:
+      kind: press_button
+      button_text: Order
+    expect:
+      - kind: message_edited
+      - kind: vision_no_issues
