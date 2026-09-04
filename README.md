@@ -29,6 +29,17 @@ a vibe.
 ## Quick start
 
 ```bash
+./install.sh          # podman build + doctor check; or ./install.sh --no-container for a venv
+```
+
+An LLM agent installing this unattended (from the git URL, with minimal human
+involvement) should read **[AGENTS.md](AGENTS.md)** instead — it spells out
+the exact non-interactive install + login protocol
+(`graea.agent.json` is the same thing, machine-readable).
+
+Manual / no-script path:
+
+```bash
 pip install -e ".[demo,dev]"
 
 # 1. One-time: log in as your test Telegram user (see docs/SETUP.md for
@@ -89,6 +100,7 @@ Env vars, prefix `GRAEA_` (or a `.env` file in the working directory):
 | `GRAEA_API_ID`, `GRAEA_API_HASH` | — | my.telegram.org credentials for the test user |
 | `GRAEA_PHONE` | — | test user phone number (login only) |
 | `GRAEA_SESSION` | `./data/graea.session` | Telethon session file |
+| `GRAEA_SESSION_STRING` | — | Telethon `StringSession`; if set, used instead of the session file (`graea session export` prints one from an existing login) |
 | `GRAEA_BOT` | — | default target, `@my_bot` |
 | `GRAEA_DB` | `./data/graea.duckdb` | DuckDB memory |
 | `GRAEA_SHOTS` | `./data/shots` | screenshot output directory |
