@@ -31,7 +31,7 @@ Ask for these once, up front:
 ## 1. Install
 
 ```bash
-git clone https://github.com/estejosh/graea && cd graea && ./install.sh
+git clone https://github.com/estejosh/graea && cd graea && bash install.sh
 ```
 
 This builds the podman image (`Containerfile` — Python 3.11, tesseract,
@@ -42,7 +42,7 @@ the environment. Safe to re-run.
 No podman on this machine? Use the venv path instead:
 
 ```bash
-./install.sh --no-container
+bash install.sh --no-container
 ```
 
 This sets up `.venv`, `pip install -e ".[demo,dev]"`, `playwright install

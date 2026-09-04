@@ -29,7 +29,7 @@ a vibe.
 ## Quick start
 
 ```bash
-./install.sh          # podman build + doctor check; or ./install.sh --no-container for a venv
+bash install.sh       # podman build + doctor check; or bash install.sh --no-container for a venv
 ```
 
 An LLM agent installing this unattended (from the git URL, with minimal human

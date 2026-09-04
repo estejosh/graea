@@ -14,8 +14,8 @@
     ],
     "notes": "api_id/api_hash from https://my.telegram.org (API development tools) for a SPARE Telegram account, never the human's personal one. `phone` is that spare account's number, needed only for the phone-code handshake. If the human already has a GRAEA_SESSION_STRING from a previous login (see session_export below), phone/the phone-code step can be skipped entirely."
   },
-  "install_cmd": "git clone https://github.com/estejosh/graea && cd graea && ./install.sh",
-  "install_cmd_no_container": "git clone https://github.com/estejosh/graea && cd graea && ./install.sh --no-container",
+  "install_cmd": "git clone https://github.com/estejosh/graea && cd graea && bash install.sh",
+  "install_cmd_no_container": "git clone https://github.com/estejosh/graea && cd graea && bash install.sh --no-container",
   "env_file": ".env",
   "env_file_template": ".env.example",
   "mcp": {
