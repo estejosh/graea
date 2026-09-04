@@ -1,0 +1,202 @@
+{
+  "name": "graea",
+  "version": "0.1.0",
+  "description": "Give an LLM eyes on a Telegram bot: MTProto + Telegram Web screenshots + vision reader + DuckDB memory.",
+  "repo": "https://github.com/estejosh/graea",
+  "human_prereqs": {
+    "required": [
+      "api_id",
+      "api_hash",
+      "phone"
+    ],
+    "optional_if_session_string_provided": [
+      "phone"
+    ],
+    "notes": "api_id/api_hash from https://my.telegram.org (API development tools) for a SPARE Telegram account, never the human's personal one. `phone` is that spare account's number, needed only for the phone-code handshake. If the human already has a GRAEA_SESSION_STRING from a previous login (see session_export below), phone/the phone-code step can be skipped entirely."
+  },
+  "install_cmd": "git clone https://github.com/estejosh/graea && cd graea && ./install.sh",
+  "install_cmd_no_container": "git clone https://github.com/estejosh/graea && cd graea && ./install.sh --no-container",
+  "env_file": ".env",
+  "env_file_template": ".env.example",
+  "mcp": {
+    "container": {
+      "command": "podman",
+      "args": [
+        "run",
+        "-i",
+        "--rm",
+        "-v",
+        "/ABSOLUTE/PATH/TO/graea/data:/data:Z",
+        "--env-file",
+        ".env",
+        "graea:latest",
+        "mcp"
+      ],
+      "note": "Replace /ABSOLUTE/PATH/TO/graea with the real clone path: MCP clients do not run from the repo directory, and podman bind mounts need an absolute path. Vision endpoint on the host (e.g. Ollama) is http://host.containers.internal:11434/v1 from inside the container, not localhost."
+    },
+    "venv": {
+      "command": ".venv/bin/graea",
+      "args": [
+        "mcp"
+      ]
+    }
+  },
+  "login_protocol": {
+    "mtproto": {
+      "command_container": [
+        "podman",
+        "run",
+        "-it",
+        "--rm",
+        "-v",
+        "/ABSOLUTE/PATH/TO/graea/data:/data:Z",
+        "--env-file",
+        ".env",
+        "graea:latest",
+        "login"
+      ],
+      "command_venv": [
+        ".venv/bin/graea",
+        "login"
+      ],
+      "run_in_background": true,
+      "watch_stdout_for": "GRAEA_LOGIN: waiting for code, write it to <path>",
+      "human_action": "Telegram sends the spare account a login code by SMS/app; ask the human for it ONCE.",
+      "respond_by": "write the code to <path> named in the watched line (e.g. `echo 123456 > data/login-code.txt`), or set env GRAEA_LOGIN_CODE before running instead of writing a file",
+      "success_line": "GRAEA_LOGIN: ok <user>",
+      "failure_line_prefix": "GRAEA_LOGIN: timed out",
+      "two_factor_env": "GRAEA_2FA_PASSWORD",
+      "skip_if": "GRAEA_SESSION_STRING is already set in .env (see session_export)"
+    },
+    "web": {
+      "command_container": [
+        "podman",
+        "run",
+        "-it",
+        "--rm",
+        "-v",
+        "/ABSOLUTE/PATH/TO/graea/data:/data:Z",
+        "--env-file",
+        ".env",
+        "graea:latest",
+        "login-web"
+      ],
+      "command_venv": [
+        ".venv/bin/graea",
+        "login-web"
+      ],
+      "run_in_background": true,
+      "watch_stdout_for": "GRAEA_LOGIN_WEB: scan <path>",
+      "human_action": "scan the QR image at <path> (e.g. data/login-qr.png) with the Telegram app on the spare account: Settings > Devices > Link Desktop Device.",
+      "respond_by": "send the human the PNG at <path>; the QR is re-screenshotted to the same path roughly every 20s until scanned",
+      "success_line": "GRAEA_LOGIN_WEB: ok",
+      "already_line": "GRAEA_LOGIN_WEB: already"
+    }
+  },
+  "session_export": {
+    "command_container": [
+      "podman",
+      "run",
+      "--rm",
+      "-v",
+      "/ABSOLUTE/PATH/TO/graea/data:/data:Z",
+      "--env-file",
+      ".env",
+      "graea:latest",
+      "session",
+      "export"
+    ],
+    "command_venv": [
+      ".venv/bin/graea",
+      "session",
+      "export"
+    ],
+    "prints": "a Telethon StringSession on stdout, after `graea login` has been run once anywhere",
+    "use": "set GRAEA_SESSION_STRING to this value in .env / any container's env to skip the phone-code handshake there entirely"
+  },
+  "verify_cmd": {
+    "status": {
+      "command_container": [
+        "podman",
+        "run",
+        "--rm",
+        "-v",
+        "/ABSOLUTE/PATH/TO/graea/data:/data:Z",
+        "--env-file",
+        ".env",
+        "graea:latest",
+        "status",
+        "--json"
+      ],
+      "command_venv": [
+        ".venv/bin/graea",
+        "status",
+        "--json"
+      ],
+      "exit_0": "mtproto session authorized and connected",
+      "exit_2": "not connected/authorized yet — check the `hint` field in the JSON output"
+    },
+    "doctor": {
+      "command_container": [
+        "podman",
+        "run",
+        "--rm",
+        "-v",
+        "/ABSOLUTE/PATH/TO/graea/data:/data:Z",
+        "--env-file",
+        ".env",
+        "graea:latest",
+        "doctor"
+      ],
+      "command_venv": [
+        ".venv/bin/graea",
+        "doctor"
+      ],
+      "offline": true,
+      "exit_0": "all offline checks passed",
+      "exit_1": "see the `problems` array in the JSON output"
+    }
+  },
+  "demo_bot": {
+    "start_container": [
+      "podman",
+      "run",
+      "--rm",
+      "-e",
+      "DEMO_BOT_TOKEN=...",
+      "-e",
+      "BUGS=raw_markdown",
+      "--entrypoint",
+      "python",
+      "graea:latest",
+      "-m",
+      "graea.demo.buggy_bot"
+    ],
+    "start_compose": [
+      "podman-compose",
+      "run",
+      "--rm",
+      "demo-bot"
+    ],
+    "start_venv": [
+      "python",
+      "-m",
+      "graea.demo.buggy_bot"
+    ],
+    "env": {
+      "DEMO_BOT_TOKEN": "from @BotFather",
+      "BUGS": "comma list of planted bugs, empty = correct behavior"
+    },
+    "run_scenario_venv": [
+      ".venv/bin/graea",
+      "run",
+      "graea/demo/scenarios/start_markdown.yaml"
+    ]
+  },
+  "troubleshooting": {
+    "unauthorized session": "GRAEA_SESSION points at a file/StringSession that was never logged in, or was logged in with different api_id/api_hash. Re-run the mtproto login protocol.",
+    "web not logged in": "`graea status --json` shows web_logged_in:false. Re-run the web login protocol; GRAEA_WEB_PROFILE must be a persistent, writable directory (bind-mounted, not ephemeral).",
+    "vision unreachable": "`graea doctor`'s vision_reachable is false. Point GRAEA_VISION_BASE_URL at a running OpenAI-compatible endpoint (e.g. Ollama), or set GRAEA_VISION_PROVIDER=ocr or =none. From inside the container, the host's Ollama is http://host.containers.internal:11434/v1 (localhost is the container itself).",
+    "empty screenshots": "Telegram Web's DOM changed. Patch the SELECTORS dict in graea/visual/web.py — it is the single place selectors live."
+  }
+}

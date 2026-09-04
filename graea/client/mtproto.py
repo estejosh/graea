@@ -31,6 +31,7 @@ from typing import Any, Callable, Optional
 
 from telethon import TelegramClient, events
 from telethon.errors import RPCError
+from telethon.sessions import StringSession
 from telethon.tl.custom.message import Message as TLMessage
 
 from graea.client.serialize import message_to_observed
@@ -44,7 +45,8 @@ class TelethonTransport:
     def __init__(self, settings: Settings):
         self.settings = settings
         settings.ensure_dirs()
-        self.client = TelegramClient(str(settings.session), settings.api_id, settings.api_hash)
+        session: Any = StringSession(settings.session_string) if settings.session_string else str(settings.session)
+        self.client = TelegramClient(session, settings.api_id, settings.api_hash)
         self.bot_id: Optional[int] = None
         self.chat_id: Optional[int] = None
         self.bot_username: Optional[str] = None

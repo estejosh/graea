@@ -98,6 +98,44 @@ example `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers`), skip `playwright
 install` — just make sure that env var is set before running anything that
 touches the visual eye.
 
+## Container (podman)
+
+Graea ships a `Containerfile` (build/run with **podman**, not docker — see
+`AGENTS.md` for why and for the full unattended install protocol an LLM
+agent should follow):
+
+```bash
+podman build -t graea:latest -f Containerfile .
+mkdir -p data
+cp .env.example .env   # fill in GRAEA_API_ID / GRAEA_API_HASH / GRAEA_BOT
+
+# one-time logins (interactive, from a terminal):
+podman run -it --rm -v "$(pwd)/data:/data:Z" --env-file .env graea:latest login
+podman run -it --rm -v "$(pwd)/data:/data:Z" --env-file .env graea:latest login-web
+
+# verify:
+podman run --rm -v "$(pwd)/data:/data:Z" --env-file .env graea:latest status --json
+podman run --rm -v "$(pwd)/data:/data:Z" --env-file .env graea:latest doctor
+
+# run the MCP server:
+podman run -i --rm -v "$(pwd)/data:/data:Z" --env-file .env graea:latest mcp
+
+# or the HTTP interface:
+podman run --rm -v "$(pwd)/data:/data:Z" --env-file .env -p 8765:8765 graea:latest serve --host 0.0.0.0
+```
+
+`./install.sh` automates the build + `.env` bootstrap + `doctor` check above.
+`compose.yaml` (podman-compose) defines `graea-mcp`, `graea-http`, and
+`demo-bot` services for a multi-container setup.
+
+The image bakes in tesseract, Playwright's Chromium (at
+`PLAYWRIGHT_BROWSERS_PATH=/ms-playwright`), and runs as a non-root `graea`
+user (uid 1000) so rootless podman keeps `./data` writable. `/data` is the
+container-side mount point for everything under `./data` on the host
+(session file, DuckDB, screenshots, the Telegram Web browser profile) — bind
+it to persist state across container runs; without it, every `podman run`
+starts from a clean, unauthorized slate.
+
 ## Windows / WSL notes
 
 - **WSL is the easier path.** Run everything (test user login, demo bot,

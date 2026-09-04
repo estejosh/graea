@@ -1,0 +1,47 @@
+# podman-compose compatible (no top-level `version:` key needed/wanted).
+#
+#   podman-compose up graea-http
+#   podman-compose run --rm graea-mcp        # stdio MCP server, needs a TTY/pipe
+#
+# All services read graea/demo config from .env (copy .env.example -> .env
+# first, or let install.sh do it) and persist state under ./data.
+
+services:
+  graea-mcp:
+    build:
+      context: .
+      dockerfile: Containerfile
+    image: graea:latest
+    command: ["mcp"]
+    stdin_open: true
+    tty: false
+    env_file:
+      - .env
+    volumes:
+      - ./data:/data:Z
+
+  graea-http:
+    build:
+      context: .
+      dockerfile: Containerfile
+    image: graea:latest
+    command: ["serve", "--host", "0.0.0.0"]
+    env_file:
+      - .env
+    ports:
+      - "8765:8765"
+    volumes:
+      - ./data:/data:Z
+
+  demo-bot:
+    build:
+      context: .
+      dockerfile: Containerfile
+    image: graea:latest
+    entrypoint: ["python", "-m", "graea.demo.buggy_bot"]
+    command: []
+    environment:
+      DEMO_BOT_TOKEN: "${DEMO_BOT_TOKEN:?set DEMO_BOT_TOKEN}"
+      BUGS: "${BUGS:-}"
+    volumes:
+      - ./data:/data:Z
