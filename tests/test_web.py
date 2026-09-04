@@ -1,0 +1,177 @@
+"""Tests for graea.visual.web — offline only. Network-dependent behavior
+(actual login, actual web.telegram.org navigation) is not exercised here.
+
+Screenshot/region logic is tested against a local file:// HTML fixture that
+mimics the WebK layout (a `.bubbles` chat column containing `.bubble`
+message elements), using a real headless chromium
+(PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers).
+"""
+from __future__ import annotations
+
+import importlib.util
+
+import pytest
+from PIL import Image
+
+from graea.config import Settings
+from graea.visual.web import SELECTORS, NullWeb, TelegramWeb
+
+PLAYWRIGHT_AVAILABLE = importlib.util.find_spec("playwright") is not None
+
+
+FIXTURE_HTML = """
+<!doctype html>
+<html>
+<head>
+<style>
+  body { margin: 0; padding: 0; }
+  #column-left { width: 200px; height: 600px; background: #eee; float: left; }
+  .chatlist { width: 100%; height: 100%; }
+  .bubbles {
+    width: 600px; height: 600px; overflow: auto; background: white;
+    position: relative;
+  }
+  .bubble {
+    width: 300px; height: 40px; margin: 10px; background: #cde;
+    display: block;
+  }
+</style>
+</head>
+<body>
+  <div id="column-left"><div class="chatlist">chats</div></div>
+  <div id="column-center">
+    <div class="bubbles">
+      <div class="bubble is-in" id="b0">message 0</div>
+      <div class="bubble is-in" id="b1">message 1</div>
+      <div class="bubble is-out" id="b2">message 2</div>
+      <div class="bubble is-in" id="b3">message 3</div>
+      <div class="bubble is-out" id="b4">message 4</div>
+      <div class="bubble is-in" id="b5">message 5</div>
+      <div class="bubble is-out" id="b6">message 6</div>
+    </div>
+  </div>
+</body>
+</html>
+"""
+
+
+def test_selectors_well_formed():
+    required_roles = {
+        "chat_column", "message_bubble", "inline_button",
+        "login_qr", "chat_list", "app_root",
+    }
+    assert required_roles.issubset(SELECTORS.keys())
+    for role, candidates in SELECTORS.items():
+        assert isinstance(candidates, list)
+        assert len(candidates) >= 1
+        for sel in candidates:
+            assert isinstance(sel, str) and sel.strip()
+
+
+@pytest.mark.asyncio
+async def test_null_web_raises_for_every_method(tmp_path):
+    web = NullWeb()
+    methods = [
+        ("start", ()),
+        ("stop", ()),
+        ("is_logged_in", ()),
+        ("login_qr_screenshot", (str(tmp_path / "x.png"),)),
+        ("wait_for_login", (1,)),
+        ("open_chat", ("bot",)),
+        ("screenshot", (str(tmp_path / "x.png"),)),
+        ("scroll_to_bottom", ()),
+        ("click_inline_button", ("x",)),
+        ("visible_text", ()),
+    ]
+    for name, args in methods:
+        fn = getattr(web, name)
+        with pytest.raises(RuntimeError, match="visual eye disabled"):
+            await fn(*args)
+
+
+@pytest.fixture
+def fixture_html_path(tmp_path):
+    p = tmp_path / "fixture.html"
+    p.write_text(FIXTURE_HTML)
+    return p
+
+
+@pytest.mark.skipif(not PLAYWRIGHT_AVAILABLE, reason="playwright not installed")
+@pytest.mark.asyncio
+async def test_screenshot_region_logic_against_fixture(tmp_path, fixture_html_path):
+    """Drive a real headless chromium against a local file:// page that
+    reuses the same selectors (.bubbles / .bubble) TelegramWeb looks for,
+    and check region="chat" vs region="last_messages" vs region="full"
+    produce differently-sized, valid PNGs."""
+    settings = Settings(
+        web_profile=tmp_path / "profile",
+        web_headless=True,
+        web_viewport_width=800,
+        web_viewport_height=700,
+        web_settle_ms=50,
+    )
+    web = TelegramWeb(settings)
+    await web.start()
+    try:
+        page = web._page
+        await page.goto(f"file://{fixture_html_path}")
+        await page.wait_for_timeout(100)
+
+        full_path = tmp_path / "full.png"
+        chat_path = tmp_path / "chat.png"
+        last_path = tmp_path / "last.png"
+
+        full_shot = await web.screenshot(str(full_path), region="full")
+        chat_shot = await web.screenshot(str(chat_path), region="chat")
+        last_shot = await web.screenshot(str(last_path), region="last_messages", last_n=2)
+
+        assert full_shot.region == "full"
+        assert chat_shot.region == "chat"
+        assert last_shot.region == "last_messages"
+
+        for shot, path in ((full_shot, full_path), (chat_shot, chat_path), (last_shot, last_path)):
+            assert path.exists()
+            with Image.open(path) as im:
+                assert im.size[0] > 0 and im.size[1] > 0
+            assert shot.sha256 and len(shot.sha256) == 64
+
+        # full viewport should be the widest (includes #column-left).
+        assert full_shot.width >= chat_shot.width
+        # last_messages (2 bubbles ~ 2*(40+20) tall) should be much shorter
+        # than the whole chat column (700px tall).
+        assert last_shot.height < chat_shot.height
+
+        # visible_text / scroll_to_bottom should not raise.
+        text = await web.visible_text()
+        assert "message" in text
+        await web.scroll_to_bottom()
+
+        # click_inline_button: no matching button in the fixture -> False, no raise.
+        clicked = await web.click_inline_button("Does Not Exist")
+        assert clicked is False
+    finally:
+        await web.stop()
+
+
+@pytest.mark.skipif(not PLAYWRIGHT_AVAILABLE, reason="playwright not installed")
+@pytest.mark.asyncio
+async def test_click_inline_button_against_fixture(tmp_path):
+    html = FIXTURE_HTML.replace(
+        '<div class="bubble is-out" id="b6">message 6</div>',
+        '<div class="bubble is-out" id="b6">message 6'
+        '<button class="reply-markup-button">Click Me</button></div>',
+    )
+    fixture_path = tmp_path / "fixture_btn.html"
+    fixture_path.write_text(html)
+
+    settings = Settings(web_profile=tmp_path / "profile2", web_headless=True, web_settle_ms=50)
+    web = TelegramWeb(settings)
+    await web.start()
+    try:
+        page = web._page
+        await page.goto(f"file://{fixture_path}")
+        await page.wait_for_timeout(100)
+        clicked = await web.click_inline_button("Click Me")
+        assert clicked is True
+    finally:
+        await web.stop()
