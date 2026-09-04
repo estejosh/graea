@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     api_hash: Optional[str] = None
     phone: Optional[str] = None
     session: Path = Path("./data/graea.session")
+    session_string: Optional[str] = None  # StringSession, takes priority over `session` file
 
     # Target
     bot: Optional[str] = None  # "@username" or "username"

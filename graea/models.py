@@ -304,3 +304,4 @@ class Health(BaseModel):
     db_path: str = ""
     bot: Optional[str] = None
     active_run_id: Optional[str] = None
+    hint: Optional[str] = None

@@ -9,6 +9,10 @@ long-lived process state between invocations (use `graea serve` or
 from __future__ import annotations
 
 import asyncio
+import json
+import os
+import sys
+import time
 from pathlib import Path
 from typing import Any, Callable, Optional
 
@@ -17,7 +21,7 @@ import typer
 from graea.config import Settings, get_settings
 from graea.engine.runner import TestSession
 from graea.engine.scenario import load_scenario
-from graea.models import Action, ActionKind
+from graea.models import Action, ActionKind, Health
 
 try:
     from rich.console import Console
@@ -29,6 +33,8 @@ except ImportError:  # pragma: no cover - exercised only when rich is absent
 app = typer.Typer(name="graea", help="Give an LLM eyes on a Telegram bot.")
 step_app = typer.Typer(help="Ad hoc single steps against the current/adhoc run.")
 app.add_typer(step_app, name="step")
+session_app = typer.Typer(help="Session file <-> StringSession helpers.")
+app.add_typer(session_app, name="session")
 
 # Swapped out by tests. Production default: the real TestSession.
 _session_factory: Callable[[Settings], Any] = TestSession
@@ -86,34 +92,90 @@ def _step_summary(step) -> list[str]:
 
 
 @app.command()
-def login() -> None:
-    """Interactive Telethon login for the structural eye (MTProto test user)."""
+def login(code_from_file: Optional[str] = typer.Option(
+              None, "--code-from-file",
+              help="Poll this file for the login code instead of prompting "
+                   "(default: <session dir>/login-code.txt when stdin isn't a TTY)."),
+          timeout: int = typer.Option(300, help="Seconds to wait for the code via --code-from-file.")) -> None:
+    """Telethon login for the structural eye (MTProto test user).
+
+    Non-interactive-safe: never calls input() unless stdin is a TTY and
+    --code-from-file was not given. Code source, in priority order:
+    the GRAEA_LOGIN_CODE env var, then the --code-from-file path (polled
+    every 2s up to --timeout, file deleted once read), then an interactive
+    prompt. 2FA password: GRAEA_2FA_PASSWORD env var, else an interactive
+    prompt (TTY only).
+
+    Prints `GRAEA_LOGIN: waiting for code, write it to <path>` while
+    waiting on the file, and `GRAEA_LOGIN: ok <user>` on success — an agent
+    driving this in the background should watch stdout for those lines.
+    """
     from graea.client.mtproto import TelethonTransport
 
     settings = _get_settings()
     settings.ensure_dirs()
     transport = TelethonTransport(settings)
 
-    phone = settings.phone or typer.prompt("Phone number (with country code)")
+    interactive_ok = sys.stdin.isatty()
+    phone = settings.phone
+    if not phone:
+        if interactive_ok:
+            phone = typer.prompt("Phone number (with country code)")
+        else:
+            raise typer.BadParameter("GRAEA_PHONE is not set and stdin is not a TTY; "
+                                      "set GRAEA_PHONE and retry.")
+
+    code_path = Path(code_from_file) if code_from_file else settings.session.parent / "login-code.txt"
 
     def code_callback() -> str:
-        return typer.prompt("Login code")
+        env_code = os.environ.get("GRAEA_LOGIN_CODE")
+        if env_code:
+            return env_code
+        if interactive_ok and code_from_file is None:
+            return typer.prompt("Login code")
+        _print(f"GRAEA_LOGIN: waiting for code, write it to {code_path}")
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if code_path.exists():
+                code = code_path.read_text().strip()
+                try:
+                    code_path.unlink()
+                except OSError:
+                    pass
+                if code:
+                    return code
+            time.sleep(2)
+        raise RuntimeError(f"GRAEA_LOGIN: timed out waiting for code at {code_path}")
 
     def password_callback() -> str:
-        return typer.prompt("2FA password", hide_input=True)
+        env_pw = os.environ.get("GRAEA_2FA_PASSWORD")
+        if env_pw:
+            return env_pw
+        if interactive_ok:
+            return typer.prompt("2FA password", hide_input=True)
+        raise RuntimeError("GRAEA_LOGIN: 2FA password required; set GRAEA_2FA_PASSWORD")
 
     async def go() -> str:
         settings.phone = phone
         return await transport.login_interactive(code_callback=code_callback, password_callback=password_callback)
 
     who = asyncio.run(go())
-    _print(f"[green]Logged in as {who}[/]" if _console else f"Logged in as {who}")
+    _print(f"GRAEA_LOGIN: ok {who}")
 
 
 @app.command("login-web")
 def login_web(headed: bool = typer.Option(False, help="Run a visible browser instead of headless."),
-              timeout: int = typer.Option(180, help="Seconds to wait for a QR/login to complete.")) -> None:
-    """Log the visual eye (Telegram Web) in; saves a QR screenshot if not already logged in."""
+              timeout: int = typer.Option(180, help="Seconds to wait for the QR login to complete.")) -> None:
+    """Log the visual eye (Telegram Web) in; headless- and non-interactive-safe.
+
+    Writes a QR screenshot to `<shots dir>/../login-qr.png` (e.g.
+    /data/login-qr.png in the container) and prints
+    `GRAEA_LOGIN_WEB: scan <path>`. WebK QR codes rotate roughly every 30s,
+    so the QR is re-screenshotted (same path, overwritten) every 20s while
+    polling, each time reprinting the `scan` line, until login completes or
+    --timeout elapses. Prints `GRAEA_LOGIN_WEB: ok` on success, or
+    `GRAEA_LOGIN_WEB: already` (exit 0) if already logged in.
+    """
     from graea.visual.web import TelegramWeb
 
     settings = _get_settings()
@@ -121,23 +183,80 @@ def login_web(headed: bool = typer.Option(False, help="Run a visible browser ins
     settings.web_headless = not headed
     web = TelegramWeb(settings)
 
-    async def go() -> None:
+    rescreenshot_every_s = 20
+
+    async def go() -> bool:
         await web.start()
         try:
             if await web.is_logged_in():
-                _print("Already logged in.")
-                return
-            qr_path = str(Path("data") / "login-qr.png")
+                _print("GRAEA_LOGIN_WEB: already")
+                return True
+
+            qr_path = str(settings.shots.parent / "login-qr.png")
             Path(qr_path).parent.mkdir(parents=True, exist_ok=True)
             await web.login_qr_screenshot(qr_path)
-            _print(f"Scan the QR code saved at {qr_path} with your Telegram app "
-                   f"(Settings > Devices > Link Desktop Device). Waiting up to {timeout}s...")
-            ok = await web.wait_for_login(timeout_s=timeout)
-            _print("Logged in." if ok else "Timed out waiting for login.")
+            _print(f"GRAEA_LOGIN_WEB: scan {qr_path}")
+
+            deadline = time.monotonic() + timeout
+            next_shot = time.monotonic() + rescreenshot_every_s
+            while time.monotonic() < deadline:
+                remaining = deadline - time.monotonic()
+                wait_chunk = max(1, int(min(rescreenshot_every_s, remaining)))
+                if await web.wait_for_login(timeout_s=wait_chunk):
+                    _print("GRAEA_LOGIN_WEB: ok")
+                    return True
+                if time.monotonic() >= next_shot:
+                    await web.login_qr_screenshot(qr_path)
+                    _print(f"GRAEA_LOGIN_WEB: scan {qr_path}")
+                    next_shot = time.monotonic() + rescreenshot_every_s
+            _print("GRAEA_LOGIN_WEB: timed out")
+            return False
         finally:
             await web.stop()
 
-    asyncio.run(go())
+    ok = asyncio.run(go())
+    if not ok:
+        raise typer.Exit(code=1)
+
+
+# --------------------------------------------------------------------------
+# session export (StringSession)
+# --------------------------------------------------------------------------
+
+
+@session_app.command("export")
+def session_export() -> None:
+    """Print the StringSession for the current file session, for GRAEA_SESSION_STRING.
+
+    Lets a human log in once (`graea login`) anywhere, then the agent injects
+    the printed string as GRAEA_SESSION_STRING into any container/environment
+    with zero further human steps (StringSession takes priority over the
+    session file — see TelethonTransport).
+    """
+    from telethon import TelegramClient
+    from telethon.sessions import StringSession
+
+    settings = _get_settings()
+    settings.ensure_dirs()
+
+    if not settings.api_id or not settings.api_hash:
+        _print("error: GRAEA_API_ID / GRAEA_API_HASH must be set to export the session.")
+        raise typer.Exit(code=1)
+    if not settings.session.exists():
+        _print(f"error: no session file at {settings.session}; run `graea login` first.")
+        raise typer.Exit(code=1)
+
+    async def go() -> str:
+        client = TelegramClient(str(settings.session), settings.api_id, settings.api_hash)
+        await client.connect()
+        try:
+            if not await client.is_user_authorized():
+                raise RuntimeError("session file is not authorized; run `graea login` first.")
+            return StringSession.save(client.session)
+        finally:
+            await client.disconnect()
+
+    print(asyncio.run(go()))
 
 
 # --------------------------------------------------------------------------
@@ -146,14 +265,110 @@ def login_web(headed: bool = typer.Option(False, help="Run a visible browser ins
 
 
 @app.command()
-def status() -> None:
-    """Print engine health: MTProto connection, web login, vision provider, DB path."""
-    async def go(session):
-        return await session.health()
+def status(json_out: bool = typer.Option(False, "--json", help="Print the Health model as JSON.")) -> None:
+    """Print engine health: MTProto connection, web login, vision provider, DB path.
 
-    health = _run(go)
-    rows = [[k, str(v)] for k, v in health.model_dump(mode="json").items()]
-    _table("graea status", ["field", "value"], rows)
+    Never tracebacks even with no Telegram credentials configured: a failed
+    connect (e.g. unauthorized/missing session) is caught and reported as
+    Health(mtproto_connected=False, hint=<error text>) instead of raising.
+    Exit code 0 if mtproto_connected, else 2.
+    """
+    settings = _get_settings()
+    settings.ensure_dirs()
+    session = _session_factory(settings)
+
+    async def go() -> Health:
+        try:
+            health = await session.start()
+        except Exception as exc:
+            health = Health(
+                mtproto_connected=False,
+                hint=str(exc),
+                db_path=str(settings.db),
+                bot=settings.bot_username(),
+            )
+        finally:
+            try:
+                await session.stop()
+            except Exception:
+                pass
+        return health
+
+    health = asyncio.run(go())
+
+    if json_out:
+        print(health.model_dump_json(indent=2))
+    else:
+        rows = [[k, str(v)] for k, v in health.model_dump(mode="json").items()]
+        _table("graea status", ["field", "value"], rows)
+
+    if not health.mtproto_connected:
+        raise typer.Exit(code=2)
+
+
+# --------------------------------------------------------------------------
+# doctor
+# --------------------------------------------------------------------------
+
+
+@app.command()
+def doctor() -> None:
+    """Offline environment checks — no Telegram connection, no network required.
+
+    Checks: Python version, tesseract on PATH, playwright chromium present
+    under PLAYWRIGHT_BROWSERS_PATH (or the default cache dir), required env
+    vars set (api_id/api_hash/bot), data dir writable. Also best-effort
+    probes the vision endpoint (GET base_url/models, 3s timeout) but never
+    fails the check on that alone. Prints JSON {ok, problems, vision_reachable}.
+    Exit code 0 if ok, else 1.
+    """
+    import shutil as _shutil
+
+    settings = _get_settings()
+    problems: list[str] = []
+
+    if sys.version_info < (3, 11):
+        problems.append(f"python {sys.version.split()[0]} is older than the required 3.11")
+
+    if _shutil.which("tesseract") is None:
+        problems.append("tesseract binary not found on PATH")
+
+    browsers_path = os.environ.get("PLAYWRIGHT_BROWSERS_PATH")
+    search_roots = [Path(browsers_path)] if browsers_path else []
+    search_roots.append(Path.home() / ".cache" / "ms-playwright")
+    chromium_found = any(root.exists() and any(root.glob("chromium*")) for root in search_roots)
+    if not chromium_found:
+        problems.append("playwright chromium not found (run `playwright install chromium`, "
+                         "or set PLAYWRIGHT_BROWSERS_PATH to where it's provisioned)")
+
+    if not settings.api_id or not settings.api_hash:
+        problems.append("GRAEA_API_ID / GRAEA_API_HASH not set")
+    if not settings.bot:
+        problems.append("GRAEA_BOT not set")
+
+    try:
+        settings.ensure_dirs()
+        probe_path = settings.db.parent / ".graea-doctor-write-test"
+        probe_path.write_text("ok")
+        probe_path.unlink()
+    except Exception as exc:
+        problems.append(f"data dir not writable ({settings.db.parent}): {exc}")
+
+    vision_reachable: Optional[bool] = None
+    if settings.vision_provider == "openai_compatible":
+        import httpx
+
+        url = settings.vision_base_url.rstrip("/") + "/models"
+        try:
+            resp = httpx.get(url, timeout=3.0, headers={"Authorization": f"Bearer {settings.vision_api_key}"})
+            vision_reachable = resp.status_code < 500
+        except Exception:
+            vision_reachable = False
+
+    result = {"ok": len(problems) == 0, "problems": problems, "vision_reachable": vision_reachable}
+    print(json.dumps(result, indent=2))
+    if not result["ok"]:
+        raise typer.Exit(code=1)
 
 
 # --------------------------------------------------------------------------
@@ -317,11 +532,16 @@ def runs(scenario: Optional[str] = typer.Option(None)) -> None:
 
 
 @app.command()
-def serve() -> None:
+def serve(host: Optional[str] = typer.Option(None, "--host", help="Override GRAEA_HTTP_HOST."),
+          port: Optional[int] = typer.Option(None, "--port", help="Override GRAEA_HTTP_PORT.")) -> None:
     """Run the HTTP interface (FastAPI + uvicorn)."""
     from graea.interfaces import http as http_iface
     settings = _get_settings()
     settings.ensure_dirs()
+    if host:
+        settings.http_host = host
+    if port:
+        settings.http_port = port
     http_iface.serve(settings)
 
 
