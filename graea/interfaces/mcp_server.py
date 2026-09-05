@@ -263,6 +263,31 @@ async def graea_assert(assertions: list[dict]) -> list:
     return _text(json.dumps([r.model_dump(mode="json") for r in results], indent=2))
 
 
+@mcp.tool()
+async def graea_submit_reading(description: str, issues: Optional[list[dict]] = None,
+                               messages_seen: Optional[list[dict]] = None,
+                               step_id: Optional[str] = None, model: Optional[str] = None) -> list:
+    """You are the reader: report what you saw in the last step's screenshot.
+
+    With GRAEA_VISION_PROVIDER=caller (the default) no separate vision model
+    runs; every step returns its screenshot as an image and `vision.error`
+    says "pending". Look at the image and call this with a plain
+    `description` of the chat (newest message last) and `issues`, a list of
+    `{"severity": "low|medium|high", "kind": "raw_markdown|truncated_button|
+    missing_caption|empty_message|broken_media|layout|mismatch|other",
+    "detail": "..."}` (empty list = nothing wrong). Optionally
+    `messages_seen`: `[{"sender": "bot|user", "text_as_rendered": "...",
+    "buttons": ["..."]}]`. The reading is stored, the step's vision_*
+    assertions are re-evaluated, and the refreshed StepResult comes back.
+    Default target is the last step; pass `step_id` for an earlier one in
+    the current run.
+    """
+    session = await get_session()
+    step = await session.submit_reading(description, issues=issues, messages_seen=messages_seen,
+                                        step_id=step_id, model=model)
+    return _text(_step_json(step))
+
+
 # --------------------------------------------------------------------------
 # Scenarios / history / diff / sql
 # --------------------------------------------------------------------------

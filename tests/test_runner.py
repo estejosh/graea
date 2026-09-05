@@ -300,3 +300,60 @@ async def test_run_scenario_twice_diffs_fixed_and_regressed():
         assert report.run_a == run1.run_id
         assert report.run_b == run2.run_id
         assert any("reply_count" in n for n in report.fixed)
+
+
+async def test_caller_reading_reevaluates_vision_assertions(tmp_path):
+    """provider=caller: vision_no_issues is pending (fails) until the caller submits a reading."""
+    from graea.client.fake import FakeTransport
+    from graea.config import Settings
+    from graea.engine.runner import TestSession
+    from graea.models import Action, ActionKind, AssertionSpec
+    from graea.store import Store
+    from graea.visual.vision import CallerVision
+
+    settings = Settings(bot="@demo", shots=tmp_path / "shots", db=tmp_path / "db.duckdb",
+                        vision_provider="caller", ocr="off")
+    transport = FakeTransport(script={"/start": ["Welcome"]})
+    web = _StubWebForCaller(tmp_path)
+    session = TestSession(settings, transport=transport, web=web, reader=CallerVision(settings),
+                          store=Store(":memory:"))
+    await session.start()
+    await session.start_run("caller_demo")
+    step = await session.step(Action(kind=ActionKind.send_command, text="/start"),
+                              expect=[AssertionSpec(kind="text_contains", value="Welcome"),
+                                      AssertionSpec(kind="vision_no_issues", name="looks_clean")])
+    assert step.vision is not None and step.vision.error and "pending" in step.vision.error
+    pending = [a for a in step.assertions if a.name == "looks_clean"][0]
+    assert pending.passed is False
+
+    refreshed = await session.submit_reading("Bot says Welcome, one row of three buttons.", issues=[])
+    ok = [a for a in refreshed.assertions if a.name == "looks_clean"][0]
+    assert ok.passed is True
+    assert refreshed.vision.provider == "caller"
+
+    # a second submission with an issue flips it back, and the DB row follows
+    again = await session.submit_reading("Literal asterisks visible.",
+                                         issues=[{"severity": "high", "kind": "raw_markdown", "detail": "*bold*"}])
+    assert [a for a in again.assertions if a.name == "looks_clean"][0].passed is False
+    rows = session.sql("SELECT passed FROM assertions WHERE name = 'looks_clean'")
+    assert rows and rows[0]["passed"] is False
+
+
+class _StubWebForCaller:
+    def __init__(self, tmp):
+        self.tmp = tmp
+
+    async def start(self): ...
+    async def stop(self): ...
+    async def is_logged_in(self): return True
+    async def open_chat(self, bot): ...
+
+    async def screenshot(self, path, region="chat", last_n=5):
+        import hashlib
+        from pathlib import Path
+        from PIL import Image
+        from graea.models import Screenshot
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        Image.new("RGB", (40, 20), "white").save(path)
+        data = Path(path).read_bytes()
+        return Screenshot(path=str(path), sha256=hashlib.sha256(data).hexdigest(), width=40, height=20)

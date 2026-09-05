@@ -171,6 +171,14 @@ class FakeSession:
                     name: Optional[str] = None) -> StepResult:
         return self._make_step(action, expect, name)
 
+    async def submit_reading(self, description: str, issues=None, messages_seen=None,
+                             step_id: Optional[str] = None, model: Optional[str] = None) -> StepResult:
+        from graea.models import VisionFinding, VisionReading
+        step = self.last_step or self._make_step(Action(kind="look"), None, None)
+        step.vision = VisionReading(provider="caller", description=description,
+                                    issues=[VisionFinding.model_validate(i) for i in (issues or [])])
+        return step
+
     async def assert_last(self, specs: list[AssertionSpec]) -> list[AssertionResult]:
         return [
             AssertionResult(

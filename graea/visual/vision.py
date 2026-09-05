@@ -331,6 +331,31 @@ class OcrVision:
         )
 
 
+CALLER_PENDING = ("pending: the calling LLM is the reader. Look at the attached screenshot "
+                  "and call graea_submit_reading(step_id, description, issues) to record what you see.")
+
+
+class CallerVision:
+    """The LLM driving Graea is the reader.
+
+    Every step result already carries the screenshot as an MCP image block, so a
+    vision-capable caller (Claude, GPT, a local VLM) reads it directly and
+    submits its reading back with `graea_submit_reading`. Until it does, the
+    reading is marked pending (error set) so vision_* assertions never pass
+    silently. OCR text is still attached when tesseract is available.
+    """
+
+    name = "caller"
+    model = None
+
+    def __init__(self, settings: Optional[Settings] = None):
+        self._settings = settings
+
+    async def read(self, shot: Screenshot, expected: Optional[dict] = None) -> VisionReading:
+        ocr = ocr_text(shot.path) if (self._settings is not None and _should_ocr(self._settings)) else None
+        return VisionReading(provider=self.name, model=None, ocr_text=ocr, error=CALLER_PENDING)
+
+
 class NullVision:
     """Vision disabled."""
 
@@ -349,6 +374,8 @@ class NullVision:
 def make_reader(settings: Settings) -> VisionReader:
     """Build the configured VisionReader from Settings.vision_provider."""
     provider = settings.vision_provider
+    if provider == "caller":
+        return CallerVision(settings)
     if provider == "openai_compatible":
         return OpenAICompatibleVision(
             base_url=settings.vision_base_url, model=settings.vision_model,
@@ -384,7 +411,7 @@ async def probe(reader: VisionReader) -> bool:
             width=1, height=1, region="full",
         )
         reading = await reader.read(shot)
-        return reading.error is None
+        return reading.error is None or reading.provider == "caller"
     except Exception:
         return False
     finally:

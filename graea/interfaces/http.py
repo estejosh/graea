@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 from pathlib import Path
+import json
 from typing import Any, Callable, Optional
 
 import uvicorn
@@ -124,6 +125,14 @@ class AssertRequest(BaseModel):
     assertions: list[AssertionSpec]
 
 
+class ReadingRequest(BaseModel):
+    description: str
+    issues: list[dict] = []
+    messages_seen: list[dict] = []
+    step_id: Optional[str] = None
+    model: Optional[str] = None
+
+
 class ScenarioRunRequest(BaseModel):
     path_or_name: str
 
@@ -206,6 +215,16 @@ async def assert_last(body: AssertRequest, request: Request) -> JSONResponse:
     """Evaluate assertions against the most recent step. Returns a list of AssertionResult."""
     results = await _session(request).assert_last(body.assertions)
     return JSONResponse([r.model_dump(mode="json") for r in results])
+
+
+@app.post("/reading")
+async def submit_reading(body: ReadingRequest, request: Request) -> JSONResponse:
+    """The caller reports what it saw in a step's screenshot (provider=caller). Returns the refreshed StepResult."""
+    step = await _session(request).submit_reading(
+        body.description, issues=body.issues, messages_seen=body.messages_seen,
+        step_id=body.step_id, model=body.model,
+    )
+    return JSONResponse(json.loads(step.model_dump_json(exclude={"replies": {"__all__": {"raw"}}})))
 
 
 @app.post("/scenario/run")

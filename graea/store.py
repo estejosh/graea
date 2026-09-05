@@ -16,7 +16,7 @@ executor; DuckDB is fast enough not to need async itself):
     previous_run(scenario, before_run_id) -> RunSummary | None
     find_step(run_id, name) -> StepResult | None
     assertion_history(scenario, assertion_name=None, limit=50) -> list[dict]
-    sql(query, params=None) -> list[dict]                  -- read-only SELECT/WITH
+    sql(query, params=None) -> list[dict]                  -- read-only SELECT
     progress_line(run_id) -> str
 """
 from __future__ import annotations
@@ -275,6 +275,31 @@ class Store:
                  findings_json, reading.ocr_text, reading.latency_ms, reading.error],
             )
         return reading_id
+
+    def shot_id_for_step(self, step_id: str) -> Optional[str]:
+        """Latest screenshot id for a step, or None."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT shot_id FROM screenshots WHERE step_id = ? ORDER BY seq DESC LIMIT 1", [step_id]
+            ).fetchone()
+        return row[0] if row else None
+
+    def assertion_specs(self, step_id: str) -> list[tuple[str, AssertionSpec]]:
+        """(assert_id, spec) for every stored assertion of a step that has a spec."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT assert_id, spec_json FROM assertions WHERE step_id = ? AND spec_json IS NOT NULL ORDER BY seq",
+                [step_id],
+            ).fetchall()
+        return [(r[0], AssertionSpec.model_validate(json.loads(r[1]))) for r in rows]
+
+    def update_assertion(self, assert_id: str, result: AssertionResult) -> None:
+        """Overwrite the outcome of a stored assertion (used after a caller submits a reading)."""
+        with self._lock:
+            self._conn.execute(
+                "UPDATE assertions SET passed = ?, actual = ?, message = ? WHERE assert_id = ?",
+                [result.passed, result.actual, result.message, assert_id],
+            )
 
     def add_assertion(self, step_id: str, result: AssertionResult,
                        spec: Optional[AssertionSpec] = None) -> str:
