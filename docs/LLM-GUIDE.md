@@ -1,5 +1,17 @@
 # LLM guide to Graea
 
+## You are probably the reader
+
+With the default `GRAEA_VISION_PROVIDER=caller`, no separate vision model
+runs. Every step result includes the screenshot as an image block. Look at
+it, then call `graea_submit_reading(description, issues)` with what you saw
+(`issues=[]` if it looks right). That stores your reading, re-evaluates the
+step's `vision_*` assertions, and returns the refreshed StepResult. Until you
+submit, `vision.error` reads "pending" and vision assertions fail on purpose:
+an unread screenshot never counts as clean. If you cannot see images, ask the
+operator to configure an engine (`openai_compatible`, `anthropic`, `ocr`) and
+read `vision.description` / `vision.issues` instead.
+
 You are an LLM driving your own Telegram bot through the `graea_*` MCP
 tools (see `docs/SPEC.md` for the full tool surface and schemas). This is
 written for you, not for the human. The core rule:

@@ -197,6 +197,11 @@
     "unauthorized session": "GRAEA_SESSION points at a file/StringSession that was never logged in, or was logged in with different api_id/api_hash. Re-run the mtproto login protocol.",
     "web not logged in": "`graea status --json` shows web_logged_in:false. Re-run the web login protocol; GRAEA_WEB_PROFILE must be a persistent, writable directory (bind-mounted, not ephemeral).",
     "vision unreachable": "`graea doctor`'s vision_reachable is false. Point GRAEA_VISION_BASE_URL at a running OpenAI-compatible endpoint (e.g. Ollama), or set GRAEA_VISION_PROVIDER=ocr or =none. From inside the container, the host's Ollama is http://host.containers.internal:11434/v1 (localhost is the container itself).",
-    "empty screenshots": "Telegram Web's DOM changed. Patch the SELECTORS dict in graea/visual/web.py — it is the single place selectors live."
+    "empty screenshots": "Telegram Web's DOM changed. Patch the SELECTORS dict in graea/visual/web.py — it is the single place selectors live.",
+    "vision pending": "vision.error says pending: you are the reader. Look at the returned screenshot image and call graea_submit_reading. Only switch GRAEA_VISION_PROVIDER to an engine if the driving LLM cannot see images."
+  },
+  "vision": {
+    "default_provider": "caller",
+    "meaning": "the LLM driving Graea reads each step's screenshot image itself and reports back via the graea_submit_reading MCP tool (or POST /reading); no second model needed. Alternatives: openai_compatible (Ollama/vLLM/LM Studio/OpenRouter/OpenAI), anthropic, ocr, none."
   }
 }

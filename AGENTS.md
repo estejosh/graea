@@ -42,7 +42,7 @@ the environment. Safe to re-run.
 No podman on this machine? Use the venv path instead:
 
 ```bash
-bash install.sh --no-container
+./install.sh --no-container
 ```
 
 This sets up `.venv`, `pip install -e ".[demo,dev]"`, `playwright install
@@ -191,6 +191,7 @@ export GRAEA_BOT=@your_demo_bot
 |---|---|
 | `status --json` hint mentions "not authorized" / "session ... " | The MTProto session was never logged in, or belongs to a different `api_id`/`api_hash`. Redo §2a, or fetch a fresh `GRAEA_SESSION_STRING`. |
 | `status --json` shows `web_logged_in: false` | Redo §2b. Make sure `GRAEA_WEB_PROFILE` is a persistent, writable, bind-mounted directory — not an ephemeral container path that resets every run. |
+| `vision.error` says `pending` | You are the reader (`GRAEA_VISION_PROVIDER=caller`, the default). Look at the screenshot image the tool returned and call `graea_submit_reading(description, issues)`. |
 | `doctor`'s `vision_reachable` is `false` | Point `GRAEA_VISION_BASE_URL` at a running OpenAI-compatible endpoint (Ollama's default is `http://localhost:11434/v1` on the host; from inside the container use `http://host.containers.internal:11434/v1`), or set `GRAEA_VISION_PROVIDER=ocr` (tesseract-only) or `=none` (skip the reader). |
 | Screenshots come back empty / `screenshot_error` set | Telegram Web shipped a DOM change. The `SELECTORS` dict at the top of `graea/visual/web.py` is the single place to patch — add a new candidate selector for the affected role, don't rewrite the surrounding logic. |
 | Two processes fighting over the same session/DB | Graea is single-writer: run only one of MCP server / HTTP server / CLI command against the same `./data` directory at a time. |

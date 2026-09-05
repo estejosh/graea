@@ -107,7 +107,7 @@ Env vars, prefix `GRAEA_` (or a `.env` file in the working directory):
 | `GRAEA_WEB_PROFILE` | `./data/web-profile` | Playwright persistent context dir |
 | `GRAEA_WEB_HEADLESS` | `true` | run Telegram Web headless |
 | `GRAEA_REPLY_TIMEOUT_MS` | `8000` | how long to wait for a reply per step |
-| `GRAEA_VISION_PROVIDER` | `openai_compatible` | `openai_compatible` \| `anthropic` \| `ocr` \| `none` |
+| `GRAEA_VISION_PROVIDER` | `caller` | `caller` (the driving LLM reads the screenshot itself and reports back with `graea_submit_reading`) \| `openai_compatible` \| `anthropic` \| `ocr` \| `none` |
 | `GRAEA_VISION_BASE_URL` | `http://localhost:11434/v1` | OpenAI-compatible endpoint (Ollama default) |
 | `GRAEA_VISION_MODEL` | `llama3.2-vision` | vision model name |
 | `GRAEA_VISION_API_KEY` | `ollama` | API key for the vision endpoint |

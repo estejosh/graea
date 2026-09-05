@@ -48,15 +48,24 @@ separate from your test user:
 
 Pick one:
 
-- **Ollama (default, local, free)**
+- **The caller itself (default)** — `GRAEA_VISION_PROVIDER=caller`. No second
+  model. Every step hands the driving LLM the screenshot as an image; a
+  vision-capable LLM (Claude, GPT, a local VLM) reads it and reports back with
+  the `graea_submit_reading` MCP tool (or `POST /reading`). Until it does, the
+  step's `vision.error` says "pending" and `vision_*` assertions stay failed,
+  so nothing passes on an unread screenshot. Use one of the engines below
+  when the driving LLM has no vision, or when you want an independent
+  second opinion recorded automatically.
+
+- **Ollama (local, free)**
   ```bash
   # install Ollama: https://ollama.com/download
   ollama pull llama3.2-vision
   ollama serve   # usually already running as a service
   ```
-  Defaults already match this (`GRAEA_VISION_PROVIDER=openai_compatible`,
+  Set `GRAEA_VISION_PROVIDER=openai_compatible`,
   `GRAEA_VISION_BASE_URL=http://localhost:11434/v1`,
-  `GRAEA_VISION_MODEL=llama3.2-vision`). No further config needed.
+  `GRAEA_VISION_MODEL=llama3.2-vision` (or any vision model you pulled).
 
 - **Any other OpenAI-compatible endpoint** (vLLM, LM Studio, OpenRouter,
   OpenAI itself): set `GRAEA_VISION_BASE_URL`, `GRAEA_VISION_MODEL`,

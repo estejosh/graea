@@ -519,6 +519,62 @@ class TestSession:
             self._run_ok = False
         return results
 
+    async def submit_reading(self, description: str, issues: Optional[list[dict]] = None,
+                             messages_seen: Optional[list[dict]] = None,
+                             step_id: Optional[str] = None, model: Optional[str] = None) -> StepResult:
+        """The calling LLM reports what it saw in a step's screenshot.
+
+        Records a VisionReading(provider="caller") for the step (default: the
+        last step), re-evaluates that step's vision_* assertions against it,
+        updates the stored results, and returns the refreshed StepResult.
+        Works with any provider, but is the whole point of provider="caller".
+        """
+        from graea.models import VisionFinding, VisionSeenMessage
+
+        target = self._last_step
+        if step_id is not None:
+            target = next((s for s in self._run_steps if s.step_id == step_id), None)
+            if target is None:
+                raise ValueError(f"step {step_id!r} is not in the current run")
+        if target is None:
+            raise ValueError("no step to attach a reading to")
+
+        prior_ocr = target.vision.ocr_text if target.vision else None
+        reading = VisionReading(
+            provider="caller", model=model, description=description,
+            messages_seen=[VisionSeenMessage.model_validate(m) for m in (messages_seen or [])],
+            issues=[VisionFinding.model_validate(i) for i in (issues or [])],
+            ocr_text=prior_ocr, error=None,
+        )
+        shot_id = self.store.shot_id_for_step(target.step_id)
+        if shot_id is not None:
+            self.store.add_vision(shot_id, reading)
+        target.vision = reading
+        target.notes = [n for n in target.notes if not n.startswith("reader error: pending")]
+
+        # re-evaluate the vision assertions that were pending
+        stored = self.store.assertion_specs(target.step_id)
+        refreshed: list[AssertionResult] = []
+        by_name = {(a.name, a.kind): i for i, a in enumerate(target.assertions)}
+        for assert_id, spec in stored:
+            if not spec.kind.startswith("vision_"):
+                continue
+            result = evaluate_all([spec], target)[0]
+            self.store.update_assertion(assert_id, result)
+            key = (result.name, result.kind)
+            if key in by_name:
+                target.assertions[by_name[key]] = result
+            refreshed.append(result)
+        self._run_ok = all(a.passed for s in self._run_steps for a in s.assertions)
+        if refreshed:
+            target.notes.append(
+                f"caller reading recorded; re-evaluated {len(refreshed)} vision assertion(s): "
+                f"{sum(r.passed for r in refreshed)} passed"
+            )
+        else:
+            target.notes.append("caller reading recorded")
+        return target
+
     # ------------------------------------------------------------------
     # queries (sync — DuckDB is fast enough to call directly)
     # ------------------------------------------------------------------

@@ -38,7 +38,7 @@ class Settings(BaseSettings):
     quiet_ms: int = 1200  # after first reply, keep collecting until this long with no new events
 
     # Reader
-    vision_provider: Literal["openai_compatible", "anthropic", "ocr", "none"] = "openai_compatible"
+    vision_provider: Literal["caller", "openai_compatible", "anthropic", "ocr", "none"] = "caller"
     vision_base_url: str = "http://localhost:11434/v1"
     vision_model: str = "llama3.2-vision"
     vision_api_key: str = "ollama"

@@ -56,19 +56,19 @@ graea/
     runner.py          TestSession: one step = act -> wait -> observe ->
                        screenshot -> read -> store -> diff -> StepResult
     assertions.py      assertion evaluators
-    scenario.py         YAML scenario loader + runner
-    diff.py             run-vs-previous-run diff -> DiffReport
-    fingerprint.py       git commit / tree hash of bot source
+    scenario.py        YAML scenario loader + runner
+    diff.py            run-vs-previous-run diff -> DiffReport
+    fingerprint.py     git commit / tree hash of bot source
   interfaces/
-    mcp_server.py       FastMCP server (stdio) — primary LLM interface
-    cli.py               typer CLI (login, run, step, diff, history, sql, serve)
-    http.py              FastAPI wrapper over the same session API
+    mcp_server.py      FastMCP server (stdio) — primary LLM interface
+    cli.py             typer CLI (login, run, step, diff, history, sql, serve)
+    http.py            FastAPI wrapper over the same session API
   demo/
-    buggy_bot.py         python-telegram-bot demo with planted bugs
-    scenarios/*.yaml      scenarios that catch those bugs
-tests/                    pytest; no Telegram creds needed (FakeTransport,
-                          NullVision, real DuckDB in tmp)
-docs/                     SPEC.md, SETUP.md, USAGE.md, LLM-GUIDE.md
+    buggy_bot.py       python-telegram-bot demo with planted bugs
+    scenarios/*.yaml   scenarios that catch those bugs
+tests/                 pytest; no Telegram creds needed (FakeTransport,
+                       NullVision, real DuckDB in tmp)
+docs/                  SPEC.md, SETUP.md, USAGE.md, LLM-GUIDE.md
 ```
 
 ## Contracts (see `graea/models.py` — authoritative)
@@ -157,7 +157,7 @@ GRAEA_SHOTS=./data/shots
 GRAEA_WEB_PROFILE=./data/web-profile     Playwright persistent context
 GRAEA_WEB_HEADLESS=true
 GRAEA_REPLY_TIMEOUT_MS=8000
-GRAEA_VISION_PROVIDER=openai_compatible  | anthropic | ocr | none
+GRAEA_VISION_PROVIDER=caller             | openai_compatible | anthropic | ocr | none
 GRAEA_VISION_BASE_URL=http://localhost:11434/v1   (Ollama default)
 GRAEA_VISION_MODEL=llama3.2-vision
 GRAEA_VISION_API_KEY=ollama
