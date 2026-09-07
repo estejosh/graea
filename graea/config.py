@@ -8,8 +8,13 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    # env_ignore_empty: an empty `GRAEA_API_ID=` / `GRAEA_PHONE=` line in .env
+    # (exactly what a fresh install writes before the human fills it in)
+    # must fall back to the field default (None) instead of pydantic trying
+    # to parse "" as an int and crashing every command, doctor included.
     model_config = SettingsConfigDict(env_prefix="GRAEA_", env_file=".env",
-                                      env_file_encoding="utf-8", extra="ignore")
+                                      env_file_encoding="utf-8", extra="ignore",
+                                      env_ignore_empty=True)
 
     # Telegram test-user account (my.telegram.org)
     api_id: Optional[int] = None
@@ -36,6 +41,7 @@ class Settings(BaseSettings):
     # Timing
     reply_timeout_ms: int = 8000
     quiet_ms: int = 1200  # after first reply, keep collecting until this long with no new events
+    connect_timeout_s: int = 20  # cap on the first MTProto connect (can be slow on first run)
 
     # Reader
     vision_provider: Literal["caller", "openai_compatible", "anthropic", "ocr", "none"] = "caller"

@@ -3,6 +3,58 @@
 All notable changes to Graea are recorded here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.1.2] — 2026-09-07
+
+Fixes from a first-run field report from an unattended Cline agent running
+on Ubuntu with rootless podman:
+
+- **Rootless podman bind mount (blocker)**: a fresh `./data` owned by the
+  host user was not writable from inside the container, because rootless
+  podman maps the container's uid 1000 through `/etc/subuid` to an
+  unrelated host uid. Every documented `podman run` example now passes
+  `--userns=keep-id` (install.sh, AGENTS.md, README.md, docs/SETUP.md,
+  graea.agent.json, and `userns_mode: keep-id` in compose.yaml).
+  `install.sh` now verifies `./data` is writable from inside the container
+  before running `doctor`, falling back to `chmod -R a+rwX ./data` and
+  printing `GRAEA_INSTALL: data dir writable: yes|repaired|NO`. `doctor`'s
+  `data dir not writable` problem now names the exact fix
+  (`--userns=keep-id` or `chmod -R a+rwX ./data`), aware of whether it's
+  running inside the container. The Containerfile's comment explaining uid
+  1000 was misleading; it now explains `--userns=keep-id` and adds
+  `chmod 0777 /data` as a belt-and-braces fallback.
+- **Telethon auth errors no longer print a Rich traceback**: `graea login`
+  / `login-web` / `session export` now catch `telethon.errors.RPCError`,
+  `RuntimeError`, and `OSError` and print one line —
+  `GRAEA_LOGIN: error <ExceptionClassName> — <hint>` — then exit 1, with a
+  hint mapped per error (bad phone format, wrong/expired code, missing 2FA
+  password, bad api_id/api_hash, Telegram rate limit). The CLI now runs
+  with `pretty_exceptions_enable=False` and every command is wrapped by a
+  top-level guard that turns any other unexpected exception into
+  `GRAEA_ERROR: <Class>: <msg>` (exit 1) instead of a traceback.
+- **`doctor` now validates values, not just presence**: flags a still-default
+  placeholder `GRAEA_BOT` (`@your_bot`, `your_bot`, `changeme`, `xxx`, or an
+  angle-bracket placeholder), a missing/too-short `GRAEA_API_HASH`, and a
+  missing `GRAEA_PHONE` (skipped when `GRAEA_SESSION_STRING` is already
+  set). Adds a `config` object to the JSON output summarizing
+  set/missing/suspicious/placeholder status for each credential — never the
+  actual values.
+- **AGENTS.md / graea.agent.json**: call out that the first container build
+  downloads ~400 MB and takes several minutes, and that an unattended agent
+  should run it in the background and tail the log
+  (`nohup bash install.sh > install.log 2>&1 &`); `install.sh` prints this
+  before building.
+- **Minor**: `GRAEA_CONNECT_TIMEOUT_S` (default 20s) caps the first MTProto
+  connect so `status --json` fails fast with a clear hint instead of
+  hanging past 30s on a slow first connect. `graea login` / `login-web`
+  print both the container path and the host-side `./data` equivalent for
+  the code file / QR screenshot when `GRAEA_IN_CONTAINER=1`. `install.sh`
+  only prints its "done, next steps" footer when `doctor` exits 0; on
+  failure it prints the doctor command to re-run after fixing `.env`.
+
+## [0.1.1] — 2026-09-07
+
+- License changed from MIT to Elastic License 2.0 (source-available). No code changes.
+
 ## [0.1.0] — 2026-09-07
 
 Initial release. Give any LLM eyes on a Telegram bot it built: MTProto

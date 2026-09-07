@@ -9,14 +9,18 @@ long-lived process state between invocations (use `graea serve` or
 from __future__ import annotations
 
 import asyncio
+import functools
 import json
 import os
+import re
 import sys
 import time
 from pathlib import Path
 from typing import Any, Callable, Optional
 
+import click
 import typer
+from telethon.errors import RPCError
 
 from graea.config import Settings, get_settings
 from graea.engine.runner import TestSession
@@ -31,7 +35,10 @@ try:
 except ImportError:  # pragma: no cover - exercised only when rich is absent
     _console = None
 
-app = typer.Typer(name="graea", help="Give an LLM eyes on a Telegram bot.")
+# pretty_exceptions_enable=False: never let Rich (or Click's default) print a
+# full traceback for an uncaught exception — every command is wrapped by
+# `_guarded` below instead, which prints one clean line.
+app = typer.Typer(name="graea", help="Give an LLM eyes on a Telegram bot.", pretty_exceptions_enable=False)
 step_app = typer.Typer(help="Ad hoc single steps against the current/adhoc run.")
 app.add_typer(step_app, name="step")
 session_app = typer.Typer(help="Session file <-> StringSession helpers.")
@@ -40,6 +47,68 @@ app.add_typer(session_app, name="session")
 # Swapped out by tests. Production default: the real TestSession.
 _session_factory: Callable[[Settings], Any] = TestSession
 _get_settings: Callable[[], Settings] = get_settings
+
+
+# --------------------------------------------------------------------------
+# error handling: no Rich/Python tracebacks ever reach stdout/stderr
+# --------------------------------------------------------------------------
+
+# telethon.errors.RPCError subclass -> short human hint (never echoes
+# Telethon internals beyond the exception's own class name).
+_LOGIN_ERROR_HINTS: dict[str, str] = {
+    "PhoneNumberInvalidError": "check GRAEA_PHONE format (+<countrycode><number>, digits only)",
+    "PhoneCodeInvalidError": "the code was wrong; re-run login",
+    "PhoneCodeExpiredError": "code expired; re-run login",
+    "SessionPasswordNeededError": "2FA enabled; set GRAEA_2FA_PASSWORD",
+    "ApiIdInvalidError": "GRAEA_API_ID/GRAEA_API_HASH rejected; check my.telegram.org",
+}
+
+
+def _login_error_hint(exc: BaseException) -> str:
+    """Maps a login-flow exception to a short, actionable hint string. Never
+    surfaces Telethon internals (tracebacks, request objects) — just the
+    exception's class name plus this hint."""
+    name = type(exc).__name__
+    if name in _LOGIN_ERROR_HINTS:
+        return _LOGIN_ERROR_HINTS[name]
+    if name == "FloodWaitError":
+        seconds = getattr(exc, "seconds", "?")
+        return f"Telegram rate limit; wait {seconds}s"
+    text = str(exc).strip()
+    return text.splitlines()[0] if text else name
+
+
+def _print_login_error(exc: BaseException) -> None:
+    _print_err(f"GRAEA_LOGIN: error {type(exc).__name__} — {_login_error_hint(exc)}")
+
+
+def _print_err(msg: str) -> None:
+    print(msg, file=sys.stderr)
+
+
+def _guarded(fn: Callable) -> Callable:
+    """Wraps a command so an unexpected exception never prints a traceback.
+
+    typer.Exit / click exceptions (BadParameter, UsageError, the plain
+    click.exceptions.Exit typer.Exit is built on) pass through untouched so
+    their normal exit codes/messages still apply. A telethon RPCError,
+    RuntimeError, or OSError bubbling out of a login-ish command has almost
+    certainly already been reported via `_print_login_error` at the raise
+    site (login/login-web/session export) and re-raised as typer.Exit(1);
+    anything else unexpected is reported here as a single
+    `GRAEA_ERROR: <Class>: <msg>` line and exits 1."""
+
+    @functools.wraps(fn)
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
+        try:
+            return fn(*args, **kwargs)
+        except (typer.Exit, click.exceptions.ClickException, SystemExit):
+            raise
+        except Exception as exc:  # noqa: BLE001 - intentional last-resort guard
+            _print_err(f"GRAEA_ERROR: {type(exc).__name__}: {exc}")
+            raise typer.Exit(code=1) from None
+
+    return wrapper
 
 
 @app.callback()
@@ -103,12 +172,40 @@ def _step_summary(step) -> list[str]:
     return [str(step.idx), step.name, f"{passed}/{total}", str(n_issues), step.progress]
 
 
+def _in_container() -> bool:
+    return os.environ.get("GRAEA_IN_CONTAINER") == "1"
+
+
+def _container_host_path(path: str) -> Optional[str]:
+    """If `path` lives under the container's /data mount, returns the
+    host-side equivalent under ./data (as documented in AGENTS.md's
+    `-v ./data:/data:Z` bind mount) — otherwise None."""
+    if path == "/data" or path.startswith("/data/"):
+        return "./data" + path[len("/data"):]
+    return None
+
+
+def _print_path_line(prefix: str, path: str) -> None:
+    """Prints `<prefix><path>`, or — inside the container, when `path` is
+    under the bind-mounted /data — both the container path and its host
+    equivalent, so an agent watching from the host knows which file to
+    write to (the first path after the prefix is always the stable one to
+    parse)."""
+    if _in_container():
+        host_path = _container_host_path(path)
+        if host_path is not None:
+            _print(f"{prefix}{path} (container) = {host_path} on the host")
+            return
+    _print(f"{prefix}{path}")
+
+
 # --------------------------------------------------------------------------
 # login
 # --------------------------------------------------------------------------
 
 
 @app.command()
+@_guarded
 def login(code_from_file: Optional[str] = typer.Option(
               None, "--code-from-file",
               help="Poll this file for the login code instead of prompting "
@@ -150,7 +247,7 @@ def login(code_from_file: Optional[str] = typer.Option(
             return env_code
         if interactive_ok and code_from_file is None:
             return typer.prompt("Login code")
-        _print(f"GRAEA_LOGIN: waiting for code, write it to {code_path}")
+        _print_path_line("GRAEA_LOGIN: waiting for code, write it to ", str(code_path))
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             if code_path.exists():
@@ -176,11 +273,16 @@ def login(code_from_file: Optional[str] = typer.Option(
         settings.phone = phone
         return await transport.login_interactive(code_callback=code_callback, password_callback=password_callback)
 
-    who = asyncio.run(go())
+    try:
+        who = asyncio.run(go())
+    except (RPCError, RuntimeError, OSError) as exc:
+        _print_login_error(exc)
+        raise typer.Exit(code=1) from None
     _print(f"GRAEA_LOGIN: ok {who}")
 
 
 @app.command("login-web")
+@_guarded
 def login_web(headed: bool = typer.Option(False, help="Run a visible browser instead of headless."),
               timeout: int = typer.Option(180, help="Seconds to wait for the QR login to complete.")) -> None:
     """Log the visual eye (Telegram Web) in; headless- and non-interactive-safe.
@@ -212,7 +314,7 @@ def login_web(headed: bool = typer.Option(False, help="Run a visible browser ins
             qr_path = str(settings.shots.parent / "login-qr.png")
             Path(qr_path).parent.mkdir(parents=True, exist_ok=True)
             await web.login_qr_screenshot(qr_path)
-            _print(f"GRAEA_LOGIN_WEB: scan {qr_path}")
+            _print_path_line("GRAEA_LOGIN_WEB: scan ", qr_path)
 
             deadline = time.monotonic() + timeout
             next_shot = time.monotonic() + rescreenshot_every_s
@@ -224,14 +326,18 @@ def login_web(headed: bool = typer.Option(False, help="Run a visible browser ins
                     return True
                 if time.monotonic() >= next_shot:
                     await web.login_qr_screenshot(qr_path)
-                    _print(f"GRAEA_LOGIN_WEB: scan {qr_path}")
+                    _print_path_line("GRAEA_LOGIN_WEB: scan ", qr_path)
                     next_shot = time.monotonic() + rescreenshot_every_s
             _print("GRAEA_LOGIN_WEB: timed out")
             return False
         finally:
             await web.stop()
 
-    ok = asyncio.run(go())
+    try:
+        ok = asyncio.run(go())
+    except (RPCError, RuntimeError, OSError) as exc:
+        _print_login_error(exc)
+        raise typer.Exit(code=1) from None
     if not ok:
         raise typer.Exit(code=1)
 
@@ -242,6 +348,7 @@ def login_web(headed: bool = typer.Option(False, help="Run a visible browser ins
 
 
 @session_app.command("export")
+@_guarded
 def session_export() -> None:
     """Print the StringSession for the current file session, for GRAEA_SESSION_STRING.
 
@@ -273,7 +380,12 @@ def session_export() -> None:
         finally:
             await client.disconnect()
 
-    print(asyncio.run(go()))
+    try:
+        result = asyncio.run(go())
+    except (RPCError, RuntimeError, OSError) as exc:
+        _print_login_error(exc)
+        raise typer.Exit(code=1) from None
+    print(result)
 
 
 # --------------------------------------------------------------------------
@@ -282,6 +394,7 @@ def session_export() -> None:
 
 
 @app.command()
+@_guarded
 def status(json_out: bool = typer.Option(False, "--json", help="Print the Health model as JSON.")) -> None:
     """Print engine health: MTProto connection, web login, vision provider, DB path.
 
@@ -333,16 +446,60 @@ def status(json_out: bool = typer.Option(False, "--json", help="Print the Health
 # --------------------------------------------------------------------------
 
 
+_BOT_PLACEHOLDERS = {"@your_bot", "your_bot", "changeme", "xxx"}
+_PLACEHOLDER_ANGLE_RE = re.compile(r"^@?<.*>$")
+
+
+def _is_placeholder_bot(bot: str) -> bool:
+    """True for values .env.example ships (or an agent left untouched):
+    `@your_bot`, `your_bot`, `changeme`, `xxx`, or an angle-bracket
+    placeholder like `<your bot username>`."""
+    normalized = bot.strip().lower()
+    if normalized in _BOT_PLACEHOLDERS:
+        return True
+    return bool(_PLACEHOLDER_ANGLE_RE.match(normalized))
+
+
+def _doctor_config_summary(settings: Settings) -> dict[str, str]:
+    """Non-secret {field: status} summary for doctor's JSON `config` object.
+    Never includes the actual api_hash/phone values, only set/missing/etc."""
+    if not settings.bot:
+        bot_status = "missing"
+    elif _is_placeholder_bot(settings.bot):
+        bot_status = "placeholder"
+    else:
+        bot_status = settings.bot
+
+    if not settings.api_hash:
+        api_hash_status = "missing"
+    elif len(settings.api_hash) < 16:
+        api_hash_status = "suspicious"
+    else:
+        api_hash_status = "set"
+
+    return {
+        "api_id": "set" if settings.api_id else "missing",
+        "api_hash": api_hash_status,
+        "phone": "set" if settings.phone else "missing",
+        "session_string": "set" if settings.session_string else "missing",
+        "bot": bot_status,
+    }
+
+
 @app.command()
+@_guarded
 def doctor() -> None:
     """Offline environment checks — no Telegram connection, no network required.
 
     Checks: Python version, tesseract on PATH, playwright chromium present
     under PLAYWRIGHT_BROWSERS_PATH (or the default cache dir), required env
-    vars set (api_id/api_hash/bot), data dir writable. Also best-effort
-    probes the vision endpoint (GET base_url/models, 3s timeout) but never
-    fails the check on that alone. Prints JSON {ok, problems, vision_reachable}.
-    Exit code 0 if ok, else 1.
+    vars set (api_id/api_hash/phone/bot — values, not just presence: a
+    too-short api_hash or a placeholder bot username is flagged), data dir
+    writable. Also best-effort probes the vision endpoint (GET
+    base_url/models, 3s timeout) but never fails the check on that alone.
+    Prints JSON {ok, problems, vision_reachable, config}. `config` never
+    echoes the actual api_hash/phone, only set/missing/suspicious. Exit code
+    0 if ok, else 1.
     """
     import shutil as _shutil
 
@@ -363,9 +520,20 @@ def doctor() -> None:
         problems.append("playwright chromium not found (run `playwright install chromium`, "
                          "or set PLAYWRIGHT_BROWSERS_PATH to where it's provisioned)")
 
-    if not settings.api_id or not settings.api_hash:
-        problems.append("GRAEA_API_ID / GRAEA_API_HASH not set")
-    if not settings.bot:
+    config = _doctor_config_summary(settings)
+
+    if config["api_id"] == "missing":
+        problems.append("GRAEA_API_ID not set")
+    if config["api_hash"] == "missing":
+        problems.append("GRAEA_API_HASH not set")
+    elif config["api_hash"] == "suspicious":
+        problems.append("GRAEA_API_HASH looks wrong (shorter than 16 chars)")
+    if config["phone"] == "missing" and not settings.session_string:
+        problems.append("GRAEA_PHONE not set (needed for first login; not needed if "
+                         "GRAEA_SESSION_STRING is set)")
+    if config["bot"] == "placeholder":
+        problems.append(f"GRAEA_BOT is still the placeholder {settings.bot}")
+    elif config["bot"] == "missing":
         problems.append("GRAEA_BOT not set")
 
     try:
@@ -373,6 +541,14 @@ def doctor() -> None:
         probe_path = settings.db.parent / ".graea-doctor-write-test"
         probe_path.write_text("ok")
         probe_path.unlink()
+    except PermissionError:
+        msg = (f"data dir not writable ({settings.db.parent}): Permission denied. "
+               "Rootless podman? run the container with --userns=keep-id (see AGENTS.md), "
+               "or on the host: chmod -R a+rwX ./data")
+        if _in_container():
+            msg += (" (this container path is the bind-mounted ./data directory "
+                     "on the host)")
+        problems.append(msg)
     except Exception as exc:
         problems.append(f"data dir not writable ({settings.db.parent}): {exc}")
 
@@ -387,7 +563,12 @@ def doctor() -> None:
         except Exception:
             vision_reachable = False
 
-    result = {"ok": len(problems) == 0, "problems": problems, "vision_reachable": vision_reachable}
+    result = {
+        "ok": len(problems) == 0,
+        "problems": problems,
+        "vision_reachable": vision_reachable,
+        "config": config,
+    }
     print(json.dumps(result, indent=2))
     if not result["ok"]:
         raise typer.Exit(code=1)
@@ -399,6 +580,7 @@ def doctor() -> None:
 
 
 @app.command()
+@_guarded
 def run(scenario: str = typer.Argument(..., help="Scenario YAML path, or a bare name under demo/scenarios."),
         bot: Optional[str] = typer.Option(None, help="Override the scenario's target bot."),
         source: Optional[str] = typer.Option(None, "--source", help="Override the scenario's source_path (fingerprinting)."),
@@ -441,6 +623,7 @@ def _print_step(step) -> None:
 
 
 @step_app.command("send")
+@_guarded
 def step_send(text: str) -> None:
     """Send plain text to the bot and print the resulting StepResult."""
     async def go(session):
@@ -449,6 +632,7 @@ def step_send(text: str) -> None:
 
 
 @step_app.command("command")
+@_guarded
 def step_command(command: str) -> None:
     """Send a bot command (e.g. "/start") and print the resulting StepResult."""
     async def go(session):
@@ -457,6 +641,7 @@ def step_command(command: str) -> None:
 
 
 @step_app.command("press")
+@_guarded
 def step_press(text: Optional[str] = typer.Option(None), index: Optional[int] = typer.Option(None),
                row: Optional[int] = typer.Option(None), col: Optional[int] = typer.Option(None)) -> None:
     """Press an inline button (by text, flat index, or row+col) and print the StepResult."""
@@ -467,6 +652,7 @@ def step_press(text: Optional[str] = typer.Option(None), index: Optional[int] = 
 
 
 @step_app.command("file")
+@_guarded
 def step_file(path: str, caption: Optional[str] = typer.Option(None)) -> None:
     """Send a local file to the bot and print the resulting StepResult."""
     async def go(session):
@@ -475,6 +661,7 @@ def step_file(path: str, caption: Optional[str] = typer.Option(None)) -> None:
 
 
 @step_app.command("wait")
+@_guarded
 def step_wait(timeout_ms: int = typer.Argument(8000)) -> None:
     """Observe without acting for up to timeout_ms and print the resulting StepResult."""
     async def go(session):
@@ -483,6 +670,7 @@ def step_wait(timeout_ms: int = typer.Argument(8000)) -> None:
 
 
 @step_app.command("look")
+@_guarded
 def step_look(last_n: int = typer.Option(5), annotate: bool = typer.Option(False)) -> None:
     """Take a fresh screenshot + vision reading without acting, and print the StepResult."""
     async def go(session):
@@ -496,6 +684,7 @@ def step_look(last_n: int = typer.Option(5), annotate: bool = typer.Option(False
 
 
 @app.command()
+@_guarded
 def diff(scenario: Optional[str] = typer.Option(None), a: Optional[str] = typer.Option(None, "--a"),
           b: Optional[str] = typer.Option(None, "--b")) -> None:
     """Diff two runs of a scenario (defaults to the scenario's last two ended runs)."""
@@ -506,6 +695,7 @@ def diff(scenario: Optional[str] = typer.Option(None), a: Optional[str] = typer.
 
 
 @app.command()
+@_guarded
 def history(scenario: str, assertion: Optional[str] = typer.Option(None)) -> None:
     """Show pass/fail history for an assertion (or all assertions) of a scenario."""
     async def go(session):
@@ -518,6 +708,7 @@ def history(scenario: str, assertion: Optional[str] = typer.Option(None)) -> Non
 
 
 @app.command()
+@_guarded
 def sql(query: str) -> None:
     """Run a read-only SELECT against the Graea DuckDB store."""
     async def go(session):
@@ -534,6 +725,7 @@ def sql(query: str) -> None:
 
 
 @app.command()
+@_guarded
 def runs(scenario: Optional[str] = typer.Option(None)) -> None:
     """List recent runs (optionally filtered to one scenario), most recent first."""
     where = f"WHERE scenario = '{scenario}'" if scenario else ""
@@ -554,12 +746,14 @@ def runs(scenario: Optional[str] = typer.Option(None)) -> None:
 
 
 @app.command()
+@_guarded
 def version() -> None:
     """Print the installed graea version."""
     _print(__version__)
 
 
 @app.command()
+@_guarded
 def update(check: bool = typer.Option(False, "--check", help="Only check for an update; don't apply it.")) -> None:
     """Check for a newer graea release and, unless --check, apply it.
 
@@ -629,6 +823,7 @@ def update(check: bool = typer.Option(False, "--check", help="Only check for an 
 
 
 @app.command()
+@_guarded
 def serve(host: Optional[str] = typer.Option(None, "--host", help="Override GRAEA_HTTP_HOST."),
           port: Optional[int] = typer.Option(None, "--port", help="Override GRAEA_HTTP_PORT.")) -> None:
     """Run the HTTP interface (FastAPI + uvicorn)."""
@@ -643,6 +838,7 @@ def serve(host: Optional[str] = typer.Option(None, "--host", help="Override GRAE
 
 
 @app.command()
+@_guarded
 def mcp() -> None:
     """Run the MCP interface over stdio."""
     from graea.interfaces import mcp_server

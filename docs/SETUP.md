@@ -119,31 +119,39 @@ mkdir -p data
 cp .env.example .env   # fill in GRAEA_API_ID / GRAEA_API_HASH / GRAEA_BOT
 
 # one-time logins (interactive, from a terminal):
-podman run -it --rm -v "$(pwd)/data:/data:Z" --env-file .env graea:latest login
-podman run -it --rm -v "$(pwd)/data:/data:Z" --env-file .env graea:latest login-web
+podman run -it --rm --userns=keep-id -v "$(pwd)/data:/data:Z" --env-file .env graea:latest login
+podman run -it --rm --userns=keep-id -v "$(pwd)/data:/data:Z" --env-file .env graea:latest login-web
 
 # verify:
-podman run --rm -v "$(pwd)/data:/data:Z" --env-file .env graea:latest status --json
-podman run --rm -v "$(pwd)/data:/data:Z" --env-file .env graea:latest doctor
+podman run --rm --userns=keep-id -v "$(pwd)/data:/data:Z" --env-file .env graea:latest status --json
+podman run --rm --userns=keep-id -v "$(pwd)/data:/data:Z" --env-file .env graea:latest doctor
 
 # run the MCP server:
-podman run -i --rm -v "$(pwd)/data:/data:Z" --env-file .env graea:latest mcp
+podman run -i --rm --userns=keep-id -v "$(pwd)/data:/data:Z" --env-file .env graea:latest mcp
 
 # or the HTTP interface:
-podman run --rm -v "$(pwd)/data:/data:Z" --env-file .env -p 8765:8765 graea:latest serve --host 0.0.0.0
+podman run --rm --userns=keep-id -v "$(pwd)/data:/data:Z" --env-file .env -p 8765:8765 graea:latest serve --host 0.0.0.0
 ```
 
 `./install.sh` automates the build + `.env` bootstrap + `doctor` check above.
 `compose.yaml` (podman-compose) defines `graea-mcp`, `graea-http`, and
-`demo-bot` services for a multi-container setup.
+`demo-bot` services for a multi-container setup, each with `userns_mode:
+keep-id` for the same reason.
 
 The image bakes in tesseract, Playwright's Chromium (at
 `PLAYWRIGHT_BROWSERS_PATH=/ms-playwright`), and runs as a non-root `graea`
-user (uid 1000) so rootless podman keeps `./data` writable. `/data` is the
-container-side mount point for everything under `./data` on the host
-(session file, DuckDB, screenshots, the Telegram Web browser profile) — bind
-it to persist state across container runs; without it, every `podman run`
-starts from a clean, unauthorized slate.
+user (uid 1000). **`--userns=keep-id` is required** for rootless podman to
+keep `./data` writable: without it, container uid 1000 maps through
+`/etc/subuid` to an unrelated host uid, so a host-owned `./data` is not
+writable from inside the container and `doctor`/real commands fail with
+`data dir not writable (/data): Permission denied`. `--userns=keep-id` makes
+the container user's uid equal your host uid, so the bind mount just works;
+`install.sh` also runs a one-time write-test and falls back to `chmod -R
+a+rwX ./data` if it fails. `/data` is the container-side mount point for
+everything under `./data` on the host (session file, DuckDB, screenshots,
+the Telegram Web browser profile) — bind it to persist state across
+container runs; without it, every `podman run` starts from a clean,
+unauthorized slate.
 
 ## Windows / WSL notes
 

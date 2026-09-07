@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "graea"
-version = "0.1.1"
+version = "0.1.2"
 description = "Give any LLM eyes on a Telegram bot: MTProto + screenshots + vision reader + DuckDB memory."
 readme = "README.md"
 requires-python = ">=3.11"

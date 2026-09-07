@@ -1,6 +1,6 @@
 {
   "name": "graea",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "Give an LLM eyes on a Telegram bot: MTProto + Telegram Web screenshots + vision reader + DuckDB memory.",
   "repo": "https://github.com/estejosh/graea",
   "human_prereqs": {
@@ -16,6 +16,14 @@
   },
   "install_cmd": "git clone https://github.com/estejosh/graea && cd graea && bash install.sh",
   "install_cmd_no_container": "git clone https://github.com/estejosh/graea && cd graea && bash install.sh --no-container",
+  "install_notes": {
+    "first_build_size": "~400 MB (Chromium, fonts, apt deps, wheels)",
+    "first_build_time": "several minutes",
+    "why_background": "an unattended agent must run the first build in the background and tail the log, because a killed build loses the in-flight layer and has to restart",
+    "recommended_cmd": "nohup bash install.sh > install.log 2>&1 & tail -f install.log",
+    "done_marker": "GRAEA_INSTALL: done.",
+    "rootless_podman": "container uid 1000 maps through /etc/subuid to an unrelated host uid, so a host-owned ./data is not writable from inside the container without --userns=keep-id (already in every podman command below). install.sh also runs a one-time write-test and falls back to `chmod -R a+rwX ./data`, printing 'GRAEA_INSTALL: data dir writable: yes|repaired|NO'."
+  },
   "env_file": ".env",
   "env_file_template": ".env.example",
   "mcp": {
@@ -25,6 +33,7 @@
         "run",
         "-i",
         "--rm",
+        "--userns=keep-id",
         "-v",
         "/ABSOLUTE/PATH/TO/graea/data:/data:Z",
         "--env-file",
@@ -32,7 +41,7 @@
         "graea:latest",
         "mcp"
       ],
-      "note": "Replace /ABSOLUTE/PATH/TO/graea with the real clone path: MCP clients do not run from the repo directory, and podman bind mounts need an absolute path. Vision endpoint on the host (e.g. Ollama) is http://host.containers.internal:11434/v1 from inside the container, not localhost."
+      "note": "Replace /ABSOLUTE/PATH/TO/graea with the real clone path: MCP clients do not run from the repo directory, and podman bind mounts need an absolute path. --userns=keep-id keeps the bind-mounted ./data writable under rootless podman (see install_notes.rootless_podman). Vision endpoint on the host (e.g. Ollama) is http://host.containers.internal:11434/v1 from inside the container, not localhost."
     },
     "venv": {
       "command": ".venv/bin/graea",
@@ -48,6 +57,7 @@
         "run",
         "-it",
         "--rm",
+        "--userns=keep-id",
         "-v",
         "/ABSOLUTE/PATH/TO/graea/data:/data:Z",
         "--env-file",
@@ -61,10 +71,13 @@
       ],
       "run_in_background": true,
       "watch_stdout_for": "GRAEA_LOGIN: waiting for code, write it to <path>",
+      "watch_stdout_for_note": "the prefix stays stable; inside the container this line prints BOTH paths ('... write it to /data/login-code.txt (container) = ./data/login-code.txt on the host') — the first path right after the prefix is always the one to parse.",
       "human_action": "Telegram sends the spare account a login code by SMS/app; ask the human for it ONCE.",
       "respond_by": "write the code to <path> named in the watched line (e.g. `echo 123456 > data/login-code.txt`), or set env GRAEA_LOGIN_CODE before running instead of writing a file",
       "success_line": "GRAEA_LOGIN: ok <user>",
       "failure_line_prefix": "GRAEA_LOGIN: timed out",
+      "error_line_prefix": "GRAEA_LOGIN: error <ExceptionClassName> — <hint>",
+      "error_line_note": "printed (once, no traceback) for a rejected phone/code/2FA/api_id, or a Telegram rate limit; exit code 1. Fix per the hint and re-run.",
       "two_factor_env": "GRAEA_2FA_PASSWORD",
       "skip_if": "GRAEA_SESSION_STRING is already set in .env (see session_export)"
     },
@@ -74,6 +87,7 @@
         "run",
         "-it",
         "--rm",
+        "--userns=keep-id",
         "-v",
         "/ABSOLUTE/PATH/TO/graea/data:/data:Z",
         "--env-file",
@@ -87,6 +101,7 @@
       ],
       "run_in_background": true,
       "watch_stdout_for": "GRAEA_LOGIN_WEB: scan <path>",
+      "watch_stdout_for_note": "inside the container this line also prints both the container path and the host-side ./data equivalent, same convention as the mtproto login above.",
       "human_action": "scan the QR image at <path> (e.g. data/login-qr.png) with the Telegram app on the spare account: Settings > Devices > Link Desktop Device.",
       "respond_by": "send the human the PNG at <path>; the QR is re-screenshotted to the same path roughly every 20s until scanned",
       "success_line": "GRAEA_LOGIN_WEB: ok",
@@ -98,6 +113,7 @@
       "podman",
       "run",
       "--rm",
+      "--userns=keep-id",
       "-v",
       "/ABSOLUTE/PATH/TO/graea/data:/data:Z",
       "--env-file",
@@ -120,6 +136,7 @@
         "podman",
         "run",
         "--rm",
+        "--userns=keep-id",
         "-v",
         "/ABSOLUTE/PATH/TO/graea/data:/data:Z",
         "--env-file",
@@ -134,13 +151,14 @@
         "--json"
       ],
       "exit_0": "mtproto session authorized and connected",
-      "exit_2": "not connected/authorized yet — check the `hint` field in the JSON output"
+      "exit_2": "not connected/authorized yet, OR the connect attempt timed out (GRAEA_CONNECT_TIMEOUT_S, default 20s — first connect can be slow, just re-run) — check the `hint` field in the JSON output either way"
     },
     "doctor": {
       "command_container": [
         "podman",
         "run",
         "--rm",
+        "--userns=keep-id",
         "-v",
         "/ABSOLUTE/PATH/TO/graea/data:/data:Z",
         "--env-file",
@@ -154,7 +172,10 @@
       ],
       "offline": true,
       "exit_0": "all offline checks passed",
-      "exit_1": "see the `problems` array in the JSON output"
+      "exit_1": "see the `problems` array in the JSON output",
+      "json_shape": "{ok, problems, vision_reachable, config}",
+      "config_object": "{api_id: set|missing, api_hash: set|missing|suspicious, phone: set|missing, session_string: set|missing, bot: <value>|placeholder|missing} — never echoes the actual api_hash/phone values",
+      "eacces_hint": "if the data dir isn't writable, the problem text names the exact fix: run the container with --userns=keep-id, or on the host `chmod -R a+rwX ./data`"
     }
   },
   "demo_bot": {
@@ -162,6 +183,7 @@
       "podman",
       "run",
       "--rm",
+      "--userns=keep-id",
       "-e",
       "DEMO_BOT_TOKEN=...",
       "-e",
@@ -194,11 +216,14 @@
     ]
   },
   "troubleshooting": {
+    "rootless podman data dir permission denied": "doctor prints 'data dir not writable (/data): Permission denied'. Container uid maps through /etc/subuid to a host uid that doesn't own your host ./data. Run the container with --userns=keep-id (already used throughout this file), or on the host: chmod -R a+rwX ./data.",
     "unauthorized session": "GRAEA_SESSION points at a file/StringSession that was never logged in, or was logged in with different api_id/api_hash. Re-run the mtproto login protocol.",
     "web not logged in": "`graea status --json` shows web_logged_in:false. Re-run the web login protocol; GRAEA_WEB_PROFILE must be a persistent, writable directory (bind-mounted, not ephemeral).",
     "vision unreachable": "`graea doctor`'s vision_reachable is false. Point GRAEA_VISION_BASE_URL at a running OpenAI-compatible endpoint (e.g. Ollama), or set GRAEA_VISION_PROVIDER=ocr or =none. From inside the container, the host's Ollama is http://host.containers.internal:11434/v1 (localhost is the container itself).",
     "empty screenshots": "Telegram Web's DOM changed. Patch the SELECTORS dict in graea/visual/web.py — it is the single place selectors live.",
-    "vision pending": "vision.error says pending: you are the reader. Look at the returned screenshot image and call graea_submit_reading. Only switch GRAEA_VISION_PROVIDER to an engine if the driving LLM cannot see images."
+    "vision pending": "vision.error says pending: you are the reader. Look at the returned screenshot image and call graea_submit_reading. Only switch GRAEA_VISION_PROVIDER to an engine if the driving LLM cannot see images.",
+    "login prints GRAEA_LOGIN: error ...": "a Telegram-side rejection (bad phone format, wrong/expired code, missing 2FA password, bad api_id/api_hash, rate limit) was caught and printed as one line with a hint — never a traceback. Fix per the hint (e.g. correct GRAEA_PHONE, set GRAEA_2FA_PASSWORD, wait out a FloodWaitError) and re-run login.",
+    "status --json hint mentions connect timed out": "the first MTProto connect can take longer than GRAEA_CONNECT_TIMEOUT_S (default 20s). Just re-run status; it isn't a credentials problem by itself."
   },
   "vision": {
     "default_provider": "caller",
@@ -206,7 +231,7 @@
   },
   "update": {
     "check_cmd": {
-      "command_container": ["podman", "run", "--rm", "-v", "/ABSOLUTE/PATH/TO/graea/data:/data:Z", "--env-file", ".env", "graea:latest", "update", "--check"],
+      "command_container": ["podman", "run", "--rm", "--userns=keep-id", "-v", "/ABSOLUTE/PATH/TO/graea/data:/data:Z", "--env-file", ".env", "graea:latest", "update", "--check"],
       "command_venv": [".venv/bin/graea", "update", "--check"],
       "mcp_tool": "graea_update_check",
       "note": "cheap (24h on-disk cache) and safe to run at the start of every session; also folded automatically into `graea_status`/`graea_status` MCP tool output and into a stderr banner on every non-mcp/serve CLI command."

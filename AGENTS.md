@@ -34,10 +34,32 @@ Ask for these once, up front:
 git clone https://github.com/estejosh/graea && cd graea && bash install.sh
 ```
 
+**The first build downloads ~400 MB** (Chromium, fonts, apt deps, wheels)
+and takes several minutes. An unattended agent must run it in the
+background and tail the log — a killed build loses the in-flight layer and
+has to restart from wherever podman's cache left off:
+
+```bash
+nohup bash install.sh > install.log 2>&1 &
+tail -f install.log
+# wait for the line: GRAEA_INSTALL: done.
+```
+
 This builds the podman image (`Containerfile` — Python 3.11, tesseract,
 Playwright Chromium baked in), creates `./data`, copies `.env.example` to
-`.env` if it doesn't already exist, and runs `graea doctor` to sanity-check
-the environment. Safe to re-run.
+`.env` if it doesn't already exist, verifies (and if needed repairs) that
+`./data` is writable from inside the container, and runs `graea doctor` to
+sanity-check the environment. Safe to re-run.
+
+**Rootless podman note:** every container invocation below passes
+`--userns=keep-id`. Without it, the container's uid (1000) maps through
+`/etc/subuid` to an unrelated host uid, so a host-owned `./data` is not
+writable from inside the container and `doctor`/real runs fail with
+`data dir not writable (/data): Permission denied`. `--userns=keep-id` makes
+the container user's uid equal your host uid, so the bind mount just works.
+`install.sh` also runs a one-time write-test and falls back to
+`chmod -R a+rwX ./data` if needed, printing
+`GRAEA_INSTALL: data dir writable: yes|repaired|NO`.
 
 No podman on this machine? Use the venv path instead:
 
@@ -55,6 +77,12 @@ Either way, put the human's `api_id`/`api_hash`/`bot` (and
 build`/`podman run`, the image file is `Containerfile`. If `podman` isn't on
 PATH, `install.sh` fails loudly naming `podman` — don't substitute `docker`.
 
+Expect `install.sh` to exit non-zero on a fresh clone: `doctor` runs at the
+end and reports the empty/placeholder credentials in `.env` as `problems`.
+That is the signal to fill `.env`, then re-run the doctor command it prints.
+Exit 0 from `install.sh` means the image, the data mount, and `.env` are all
+good.
+
 ## 2. The two login handshakes
 
 Skip both entirely if `.env` already has a working `GRAEA_SESSION_STRING`
@@ -66,7 +94,7 @@ logged in (web) — check with `graea status --json` first (step 4).
 Run it in the **background** so you can watch its stdout while it blocks:
 
 ```bash
-podman run -it --rm -v "$(pwd)/data:/data:Z" --env-file .env graea:latest login
+podman run -it --rm --userns=keep-id -v "$(pwd)/data:/data:Z" --env-file .env graea:latest login
 # or, venv mode:
 .venv/bin/graea login
 ```
@@ -74,6 +102,11 @@ podman run -it --rm -v "$(pwd)/data:/data:Z" --env-file .env graea:latest login
 Protocol:
 
 1. Watch stdout for the line `GRAEA_LOGIN: waiting for code, write it to <path>`.
+   Inside the container this line prints **both** paths —
+   `GRAEA_LOGIN: waiting for code, write it to /data/login-code.txt
+   (container) = ./data/login-code.txt on the host` — the prefix
+   `GRAEA_LOGIN: waiting for code, write it to ` stays stable; the first
+   path right after it is always the one to parse/write from the host side.
 2. Ask the human for the login code **once** ("Telegram just sent your spare
    account a login code — what is it?").
 3. Write the code to `<path>` exactly as named in that line (e.g. `echo
@@ -84,10 +117,16 @@ Protocol:
    (If the account has 2FA, set `GRAEA_2FA_PASSWORD` in `.env` beforehand so
    the command never needs to prompt for it.)
 
+If the phone/code/2FA is rejected by Telegram (bad phone format, wrong or
+expired code, missing 2FA password, bad api_id/api_hash, rate limiting),
+`graea login` prints one line — `GRAEA_LOGIN: error <ExceptionClassName> —
+<hint>` — and exits 1. No traceback; the hint says what to fix (e.g. re-run
+with a corrected `GRAEA_PHONE`, or re-run login for a fresh code).
+
 ### 2b. Telegram Web (QR) — `graea login-web`
 
 ```bash
-podman run -it --rm -v "$(pwd)/data:/data:Z" --env-file .env graea:latest login-web
+podman run -it --rm --userns=keep-id -v "$(pwd)/data:/data:Z" --env-file .env graea:latest login-web
 # or, venv mode:
 .venv/bin/graea login-web
 ```
@@ -95,7 +134,9 @@ podman run -it --rm -v "$(pwd)/data:/data:Z" --env-file .env graea:latest login-
 Protocol:
 
 1. Watch stdout for `GRAEA_LOGIN_WEB: scan <path>` (e.g.
-   `data/login-qr.png`).
+   `data/login-qr.png`). Inside the container this also prints both paths,
+   same as `graea login` above (`... scan /data/login-qr.png (container) =
+   ./data/login-qr.png on the host`).
 2. Send the human that PNG (it's a file on disk — attach it, don't try to
    describe it) and ask them to scan it with the Telegram app on the spare
    account: **Settings > Devices > Link Desktop Device**.
@@ -112,7 +153,7 @@ After `graea login` succeeds once (anywhere), export a portable
 entirely:
 
 ```bash
-podman run --rm -v "$(pwd)/data:/data:Z" --env-file .env graea:latest session export
+podman run --rm --userns=keep-id -v "$(pwd)/data:/data:Z" --env-file .env graea:latest session export
 ```
 
 Put the printed string into `GRAEA_SESSION_STRING` in `.env` (or inject it
@@ -125,16 +166,24 @@ whole directory forward (bind-mount it) rather than trying to export it.
 ## 3. Verify
 
 ```bash
-podman run --rm -v "$(pwd)/data:/data:Z" --env-file .env graea:latest status --json
-podman run --rm -v "$(pwd)/data:/data:Z" --env-file .env graea:latest doctor
+podman run --rm --userns=keep-id -v "$(pwd)/data:/data:Z" --env-file .env graea:latest status --json
+podman run --rm --userns=keep-id -v "$(pwd)/data:/data:Z" --env-file .env graea:latest doctor
 ```
 
 `status --json` exits 0 when the MTProto session is connected and
 authorized, 2 otherwise (check the `hint` field for why — it never
-tracebacks even with no credentials at all). `doctor` runs offline checks
-(Python version, tesseract, Playwright Chromium, required env vars, data dir
-writability, a best-effort vision-endpoint probe) and prints
-`{"ok": bool, "problems": [...]}`, exiting 0/1.
+tracebacks even with no credentials at all). **The first MTProto connect can
+be slow** (well past 30s on a cold start); `status` caps it at
+`GRAEA_CONNECT_TIMEOUT_S` (default 20s) and exits 2 with
+`hint: "Telegram connect timed out after 20s (first connect can be slow;
+re-run)"` rather than hanging — just re-run it. `doctor` runs offline checks
+(Python version, tesseract, Playwright Chromium, required env vars *and*
+values — a placeholder `GRAEA_BOT`, an empty/too-short `GRAEA_API_HASH`,
+etc. are called out individually — data dir writability, a best-effort
+vision-endpoint probe) and prints
+`{"ok": bool, "problems": [...], "vision_reachable": ..., "config": {...}}`
+(the `config` object never echoes the actual api_hash/phone, only
+set/missing/suspicious/placeholder), exiting 0/1.
 
 ## 4. Register the MCP server
 
@@ -145,7 +194,7 @@ Container:
   "mcpServers": {
     "graea": {
       "command": "podman",
-      "args": ["run", "-i", "--rm", "-v", "./data:/data:Z", "--env-file", ".env", "graea:latest", "mcp"]
+      "args": ["run", "-i", "--rm", "--userns=keep-id", "-v", "./data:/data:Z", "--env-file", ".env", "graea:latest", "mcp"]
     }
   }
 }
@@ -189,6 +238,7 @@ export GRAEA_BOT=@your_demo_bot
 
 | Symptom | Fix |
 |---|---|
+| `doctor` reports `data dir not writable (/data): Permission denied` | Rootless podman: container uid maps through `/etc/subuid` to a host uid that doesn't own your host `./data`. Run the container with `--userns=keep-id` (see "Rootless podman note" in §1), or on the host: `chmod -R a+rwX ./data`. |
 | `status --json` hint mentions "not authorized" / "session ... " | The MTProto session was never logged in, or belongs to a different `api_id`/`api_hash`. Redo §2a, or fetch a fresh `GRAEA_SESSION_STRING`. |
 | `status --json` shows `web_logged_in: false` | Redo §2b. Make sure `GRAEA_WEB_PROFILE` is a persistent, writable, bind-mounted directory — not an ephemeral container path that resets every run. |
 | `vision.error` says `pending` | You are the reader (`GRAEA_VISION_PROVIDER=caller`, the default). Look at the screenshot image the tool returned and call `graea_submit_reading(description, issues)`. |

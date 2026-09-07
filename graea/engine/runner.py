@@ -20,6 +20,7 @@ Public API:
 """
 from __future__ import annotations
 
+import asyncio
 import shutil
 from pathlib import Path
 from typing import Optional, Union
@@ -138,7 +139,13 @@ class TestSession:
 
         if self._transport is None:
             self._transport = TelethonTransport(self.settings)
-        await self._transport.connect()
+        try:
+            await asyncio.wait_for(self._transport.connect(), timeout=self.settings.connect_timeout_s)
+        except asyncio.TimeoutError as exc:
+            raise TimeoutError(
+                f"Telegram connect timed out after {self.settings.connect_timeout_s}s "
+                "(first connect can be slow; re-run)"
+            ) from exc
 
         web_was_none = self._web is None
         if web_was_none:

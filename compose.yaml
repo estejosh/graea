@@ -15,6 +15,7 @@ services:
     command: ["mcp"]
     stdin_open: true
     tty: false
+    userns_mode: keep-id
     env_file:
       - .env
     volumes:
@@ -26,6 +27,7 @@ services:
       dockerfile: Containerfile
     image: graea:latest
     command: ["serve", "--host", "0.0.0.0"]
+    userns_mode: keep-id
     env_file:
       - .env
     ports:
@@ -40,6 +42,7 @@ services:
     image: graea:latest
     entrypoint: ["python", "-m", "graea.demo.buggy_bot"]
     command: []
+    userns_mode: keep-id
     environment:
       DEMO_BOT_TOKEN: "${DEMO_BOT_TOKEN:?set DEMO_BOT_TOKEN}"
       BUGS: "${BUGS:-}"
