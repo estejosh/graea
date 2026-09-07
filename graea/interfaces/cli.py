@@ -822,6 +822,51 @@ def update(check: bool = typer.Option(False, "--check", help="Only check for an 
 # --------------------------------------------------------------------------
 
 
+@app.command("web-probe")
+@_guarded
+def web_probe(bot: Optional[str] = typer.Option(None, help="Open this bot's chat first (default: GRAEA_BOT; pass '' to skip)."),
+              out: Optional[str] = typer.Option(None, help="Write the JSON here (default: <data dir>/web-probe.json).")) -> None:
+    """Dump what Telegram Web's live DOM contains, for fixing selectors in the field.
+
+    Prints one JSON object: `logged_in`, `auth_page_showing`, per-selector
+    match/visible counts for every role in graea/visual/web.py SELECTORS,
+    a compact tree of the visible elements under #column-center / #auth-pages,
+    and a full viewport screenshot path. Attach this to a bug report, or use
+    it to write a GRAEA_SELECTORS_FILE override without touching code.
+    """
+    import asyncio
+    import json as _json
+
+    from graea.visual.web import TelegramWeb
+
+    settings = _get_settings()
+    settings.ensure_dirs()
+    target = settings.bot_username() if bot is None else (bot or None)
+    out_path = Path(out) if out else settings.db.parent / "web-probe.json"
+    shot_path = str(settings.db.parent / "web-probe.png")
+
+    async def go() -> dict:
+        web = TelegramWeb(settings)
+        await web.start()
+        try:
+            result: dict = {}
+            if target:
+                try:
+                    await web.open_chat(target)
+                    result["opened_chat"] = target
+                except Exception as e:
+                    result["open_chat_error"] = f"{type(e).__name__}: {e}"
+            result.update(await web.probe_dom(screenshot_path=shot_path))
+            return result
+        finally:
+            await web.stop()
+
+    result = asyncio.run(go())
+    out_path.write_text(_json.dumps(result, indent=2), encoding="utf-8")
+    result["written"] = str(out_path)
+    _print(_json.dumps(result, indent=2))
+
+
 @app.command()
 @_guarded
 def serve(host: Optional[str] = typer.Option(None, "--host", help="Override GRAEA_HTTP_HOST."),

@@ -94,6 +94,7 @@ class Screenshot(BaseModel):
     height: int
     taken_at: datetime = Field(default_factory=utcnow)
     region: Literal["chat", "last_messages", "full"] = "chat"
+    fallback: Optional[str] = None  # set when the requested region could not be captured and a wider one was
 
 
 class VisionFinding(BaseModel):

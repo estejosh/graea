@@ -127,7 +127,7 @@ stack, and `docs/LLM-GUIDE.md` for how an LLM should drive the MCP tools.
 ## Known limits (v1)
 
 - One driver at a time. The Telethon session file and the DuckDB file are both single-writer, so run either the MCP server, the HTTP server, or CLI commands — not two of them against the same `data/` directory at once.
-- The Telegram Web selectors in `graea/visual/web.py` (`SELECTORS`) were written against WebK's known DOM but not verified on a live login; if screenshots come back empty, that dict is the only place to patch.
+- Telegram Web K ships DOM changes without notice. Login detection is verified against the 2026 redesign; message-bubble selectors are substring/`data-mid` patterns with a never-fail fallback (bubbles → chat column → viewport). If captures degrade, run `graea web-probe` and hot-fix with `GRAEA_SELECTORS_FILE` (JSON `{role: [css, ...]}`); `SELECTORS` in `graea/visual/web.py` is the single place to patch in code.
 - Private chats only; no groups, calls, or payments.
 
 ## License

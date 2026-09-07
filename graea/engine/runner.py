@@ -458,6 +458,8 @@ class TestSession:
                 str(shot_path), region="last_messages", last_n=action.last_n or 5,
             )
             shot_id = self.store.add_screenshot(step_id, screenshot)
+            if screenshot.fallback:
+                notes.append(f"screenshot fallback: {screenshot.fallback}")
         except Exception as e:
             screenshot_error = str(e)
             if "disabled" in screenshot_error.lower():

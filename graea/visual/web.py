@@ -46,57 +46,88 @@ from graea.models import Screenshot
 Region = Literal["chat", "last_messages", "full"]
 
 # --------------------------------------------------------------------------
-# Selectors: WebK's DOM/class names are not a public API and change between
-# releases. Each role below lists several candidate CSS selectors, tried in
-# order; the first that matches >=1 element wins. Keep this list the single
-# place to patch when Telegram ships a redesign.
+# Selectors. Telegram Web K (2026 redesign) uses CSS-module hashed class names
+# (e.g. `_pageSignQR_1b0yp_208`), so class-substring patterns and the few
+# stable ids are the anchors; never bare `.bubble`-style names. Verified
+# against a live login screen on 2026-09-07:
+#   body.has-auth-pages                 -> logged OUT
+#   #auth-pages (visible)               -> logged OUT (QR / phone pages)
+#   [class*="qrContainer"]              -> the QR code itself
+#   #column-left / #chatlist-container  -> present always; VISIBLE (w>0) only when logged in
+#   #column-center                      -> chat column (visible only when a chat is open)
+# Post-login bubble/keyboard selectors are substring patterns over the
+# hashed names plus WebK's `data-mid` attribute on message elements. Every
+# role can be overridden without code changes: GRAEA_SELECTORS_FILE points at
+# a JSON {role: [selectors...]} whose entries are tried FIRST. `graea web-probe`
+# dumps what the live DOM actually contains so a field patch is quick.
 # --------------------------------------------------------------------------
 
 SELECTORS: dict[str, list[str]] = {
-    # The scrollable column that holds message bubbles for the open chat.
+    # Present (and visible) only while logged out.
+    "auth_page": [
+        "#auth-pages",
+        "[class*='pageSign']",
+        "[class*='authPage']",
+    ],
+    # The QR code element on the login screen.
+    "login_qr": [
+        "[class*='qrContainer']",
+        "[class*='pageSignQR'] canvas",
+        "#auth-pages canvas",
+        "[class*='pageSignQR']",
+    ],
+    # A positive logged-in signal: real chat rows in the left column.
+    "chat_list": [
+        "#chatlist-container [data-peer-id]",
+        "#column-left [data-peer-id]",
+        "#chatlist-container ul li",
+        "#column-left [class*='chatlist'] li",
+        "[class*='chatlist-chat']",
+    ],
+    # The column that holds the open chat's messages.
     "chat_column": [
-        ".bubbles",
-        ".bubbles-inner",
+        "#column-center [class*='bubbles']",
+        "#column-center [class*='messages']",
         "#column-center .scrollable",
         "#column-center",
     ],
-    # Individual message bubble elements within the chat column.
+    # Individual message elements within the chat column.
     "message_bubble": [
-        ".bubble.is-in, .bubble.is-out",
-        ".bubble",
-        "[class*='bubble']",
+        "#column-center [data-mid]",
+        "#column-center [class*='_bubble_']",
+        "#column-center [class*='bubble']",
+        "#column-center [class*='_message_']",
+        "#column-center [class*='Message']",
+        "[data-mid]",
     ],
-    # Inline keyboard buttons attached to a message bubble.
+    # Inline keyboard buttons attached to a message.
     "inline_button": [
-        ".reply-markup-button",
-        ".inline-button",
-        "button.reply-markup-button",
-        "[class*='reply-markup'] button",
-    ],
-    # Elements present only on the QR-login screen.
-    "login_qr": [
-        "#page-signQR canvas",
-        "#page-signQR",
-        "#page-sign",
-        ".auth-image",
-        ".qr-container",
-        ".login-qr",
-        "canvas.qr-canvas",
-        "[class*='qr']",
-    ],
-    # Elements present only when the chat list (i.e. we are logged in) is shown.
-    "chat_list": [
-        "#page-chats #column-left .chatlist",
-        "#column-left .chatlist",
-        ".chatlist",
-        "#column-left",
-    ],
-    # The search/open-chat box, used as a login/readiness heuristic fallback.
-    "app_root": [
-        "#page-chats",
-        "#app",
+        "#column-center [class*='reply-markup'] button",
+        "#column-center [class*='replyMarkup'] button",
+        "#column-center [class*='reply-markup-button']",
+        "#column-center [class*='keyboard'] button",
+        "#column-center [class*='inline'] button",
     ],
 }
+
+
+def _merge_selector_overrides(settings: "Settings") -> dict[str, list[str]]:
+    """SELECTORS with any GRAEA_SELECTORS_FILE entries prepended per role."""
+    merged = {k: list(v) for k, v in SELECTORS.items()}
+    path = getattr(settings, "selectors_file", None)
+    if not path:
+        return merged
+    try:
+        import json
+
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+        for role, sels in data.items():
+            if isinstance(sels, str):
+                sels = [sels]
+            merged[role] = [str(x) for x in sels] + merged.get(role, [])
+    except Exception:
+        pass
+    return merged
 
 
 def _username_for_url(bot_username: str) -> str:
@@ -108,6 +139,7 @@ class TelegramWeb:
 
     def __init__(self, settings: Settings):
         self.settings = settings
+        self.selectors = _merge_selector_overrides(settings)
         self._pw = None
         self._context: Optional[BrowserContext] = None
         self._page: Optional[Page] = None
@@ -147,14 +179,15 @@ class TelegramWeb:
             raise RuntimeError("TelegramWeb not started; call start() first")
         return self._page
 
-    async def _first_visible(self, role: str, timeout_ms: int = 1500):
-        """Try each candidate selector for `role`, return the first Locator
-        that has >=1 attached element within timeout_ms, else None."""
+    async def _first_visible(self, role: str, timeout_ms: int = 1500, state: str = "visible"):
+        """Try each candidate selector for `role`; return the first Locator
+        with >=1 element in `state` ("visible" by default — an attached but
+        hidden element is useless for screenshots) within timeout_ms, else None."""
         page = self._require_page()
-        for sel in SELECTORS.get(role, []):
+        for sel in self.selectors.get(role, []):
             try:
                 locator = page.locator(sel).first
-                await locator.wait_for(state="attached", timeout=timeout_ms)
+                await locator.wait_for(state=state, timeout=timeout_ms)
                 return locator
             except PlaywrightTimeoutError:
                 continue
@@ -162,12 +195,40 @@ class TelegramWeb:
                 continue
         return None
 
+    async def _is_visible(self, selector: str) -> bool:
+        """True if the first match of `selector` exists and has a non-empty box."""
+        page = self._require_page()
+        try:
+            return bool(await page.evaluate(
+                """(sel) => { const e = document.querySelector(sel); if (!e) return false;
+                       const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; }""",
+                selector,
+            ))
+        except Exception:
+            return False
+
+    async def _auth_page_showing(self) -> bool:
+        """The redesigned WebK marks a logged-out client with body.has-auth-pages
+        and a visible #auth-pages container; both are checked."""
+        page = self._require_page()
+        try:
+            has_class = await page.evaluate("() => document.body.classList.contains('has-auth-pages')")
+        except Exception:
+            has_class = False
+        if has_class:
+            return True
+        for sel in self.selectors.get("auth_page", []):
+            if await self._is_visible(sel):
+                return True
+        return False
+
     # -- auth ---------------------------------------------------------------
 
     async def is_logged_in(self) -> bool:
-        """True if the chat list is visible; False if the login/QR screen is
-        showing. Robust to either state being briefly absent: uses short
-        timeouts and checks both signals rather than hanging."""
+        """True only on a positive logged-in signal (visible left column with
+        chat rows) AND no auth page showing. The QR/phone login screen always
+        yields False — `#column-left` alone is never trusted because it exists
+        (hidden) on the login screen too."""
         page = self._require_page()
         # Only navigate if we are not already on the web client: a health check
         # must never pull the page away from an open chat mid-run.
@@ -176,24 +237,15 @@ class TelegramWeb:
                 await page.goto(self.settings.web_url, wait_until="domcontentloaded", timeout=15000)
             except Exception:
                 pass
-
-        chat_list = await self._first_visible("chat_list", timeout_ms=4000)
-        if chat_list is not None:
-            return True
-
-        login_qr = await self._first_visible("login_qr", timeout_ms=2000)
-        if login_qr is not None:
-            return False
-
-        # Neither signal found within the timeouts: check page text as a
-        # last-resort heuristic rather than hanging indefinitely.
-        try:
-            text = await page.inner_text("body", timeout=2000)
-        except Exception:
-            text = ""
-        lowered = text.lower()
-        if "log in to telegram" in lowered or "scan qr" in lowered or "quick log in" in lowered:
-            return False
+        # give the SPA a moment to decide which page it is showing
+        for _ in range(10):
+            if await self._auth_page_showing():
+                return False
+            if await self._is_visible("#column-left") or await self._is_visible("#chatlist-container"):
+                return True
+            if await self._first_visible("chat_list", timeout_ms=300) is not None:
+                return True
+            await page.wait_for_timeout(500)
         return False
 
     async def login_qr_screenshot(self, path: str) -> str:
@@ -206,7 +258,9 @@ class TelegramWeb:
         qr = await self._first_visible("login_qr", timeout_ms=8000)
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         if qr is not None:
-            await qr.screenshot(path=path)
+            # capture the whole login card, not just the code: it carries the instructions
+            card = await self._first_visible("auth_page", timeout_ms=1000)
+            await (card or qr).screenshot(path=path)
         else:
             await page.screenshot(path=path)
         return path
@@ -219,8 +273,9 @@ class TelegramWeb:
         poll_ms = 2000
         waited = 0
         while waited <= deadline_ms:
-            chat_list = await self._first_visible("chat_list", timeout_ms=1500)
-            if chat_list is not None:
+            if not await self._auth_page_showing() and (
+                await self._is_visible("#column-left") or await self._is_visible("#chatlist-container")
+            ):
                 return True
             await page.wait_for_timeout(poll_ms)
             waited += poll_ms
@@ -236,9 +291,11 @@ class TelegramWeb:
         uname = _username_for_url(bot_username)
         url = self.settings.web_url.rstrip("/") + f"/#@{uname}"
         await page.goto(url, wait_until="domcontentloaded", timeout=15000)
+        if await self._auth_page_showing():
+            raise RuntimeError(f"open_chat({bot_username!r}): web client is not logged in (run `graea login-web`)")
         chat_column = await self._first_visible("chat_column", timeout_ms=10000)
         if chat_column is None:
-            raise RuntimeError(f"open_chat({bot_username!r}): chat column never appeared")
+            raise RuntimeError(f"open_chat({bot_username!r}): chat column never became visible")
         await page.wait_for_timeout(self.settings.web_settle_ms)
 
     # -- reading --------------------------------------------------------------
@@ -270,7 +327,7 @@ class TelegramWeb:
         substring, case-insensitive) among the last messages. Returns True if
         a matching, clickable button was found and clicked."""
         page = self._require_page()
-        for sel in SELECTORS["inline_button"]:
+        for sel in self.selectors["inline_button"]:
             try:
                 locator = page.locator(sel).filter(has_text=text)
                 count = await locator.count()
@@ -299,36 +356,48 @@ class TelegramWeb:
         await page.wait_for_timeout(self.settings.web_settle_ms)
         Path(path).parent.mkdir(parents=True, exist_ok=True)
 
+        fallback: Optional[str] = None
         try:
             if region == "full":
                 await page.screenshot(path=path)
             elif region == "chat":
                 chat_column = await self._first_visible("chat_column", timeout_ms=5000)
                 if chat_column is None:
-                    raise RuntimeError("chat column element not found")
-                await chat_column.screenshot(path=path)
+                    fallback = "chat column not visible; captured the viewport instead"
+                    await page.screenshot(path=path)
+                else:
+                    await chat_column.screenshot(path=path, timeout=10000)
             elif region == "last_messages":
                 clip = await self._last_messages_bbox(last_n)
-                if clip is None:
-                    # Fall back to the whole chat column if we can't find bubbles.
-                    chat_column = await self._first_visible("chat_column", timeout_ms=5000)
-                    if chat_column is None:
-                        raise RuntimeError("no message bubbles or chat column found")
-                    await chat_column.screenshot(path=path)
-                else:
+                if clip is not None:
                     await page.screenshot(path=path, clip=clip)
+                else:
+                    chat_column = await self._first_visible("chat_column", timeout_ms=5000)
+                    if chat_column is not None:
+                        fallback = "no message bubbles matched; captured the chat column instead"
+                        await chat_column.screenshot(path=path, timeout=10000)
+                    else:
+                        fallback = "no bubbles and no visible chat column; captured the viewport instead"
+                        await page.screenshot(path=path)
             else:
                 raise RuntimeError(f"unknown region: {region!r}")
         except Exception as e:
-            raise RuntimeError(f"screenshot(region={region!r}) failed: {e}") from e
+            # Last resort: a viewport capture is always better than no eye at all.
+            try:
+                await page.screenshot(path=path)
+                fallback = f"{region} capture failed ({type(e).__name__}); captured the viewport instead"
+            except Exception as e2:
+                raise RuntimeError(f"screenshot(region={region!r}) failed: {e2}") from e2
 
-        return self._build_screenshot_model(path, region)
+        shot = self._build_screenshot_model(path, region)
+        shot.fallback = fallback
+        return shot
 
     async def _last_messages_bbox(self, last_n: int) -> Optional[dict]:
         """Union bounding box (x, y, width, height) of the last `last_n`
         message bubbles, in page coordinates. None if no bubbles are found."""
         page = self._require_page()
-        for sel in SELECTORS["message_bubble"]:
+        for sel in self.selectors["message_bubble"]:
             try:
                 locator = page.locator(sel)
                 count = await locator.count()
@@ -338,7 +407,7 @@ class TelegramWeb:
                 boxes = []
                 for i in range(start, count):
                     box = await locator.nth(i).bounding_box()
-                    if box:
+                    if box and box["width"] > 0 and box["height"] > 0:
                         boxes.append(box)
                 if not boxes:
                     continue
@@ -350,6 +419,53 @@ class TelegramWeb:
             except Exception:
                 continue
         return None
+
+    async def probe_dom(self, screenshot_path: Optional[str] = None) -> dict:
+        """Dump what the live DOM contains so selectors can be fixed in the
+        field: logged-in verdict, per-role/per-selector match + visible
+        counts, and a compact tree of visible elements under #column-center
+        (or the auth page). Never raises; errors land in the dict."""
+        page = self._require_page()
+        out: dict = {"url": page.url}
+        try:
+            out["body_class"] = await page.evaluate("() => document.body.className")
+            out["auth_page_showing"] = await self._auth_page_showing()
+            out["logged_in"] = await self.is_logged_in()
+            counts: dict[str, dict[str, dict[str, int]]] = {}
+            for role, sels in self.selectors.items():
+                counts[role] = {}
+                for sel in sels:
+                    try:
+                        res = await page.evaluate(
+                            """(sel) => { const els = [...document.querySelectorAll(sel)];
+                                 const vis = els.filter(e => { const r = e.getBoundingClientRect();
+                                   return r.width > 0 && r.height > 0; });
+                                 return {count: els.length, visible: vis.length}; }""",
+                            sel,
+                        )
+                    except Exception as e:
+                        res = {"error": str(e)[:80]}
+                    counts[role][sel] = res
+            out["selector_counts"] = counts
+            out["tree"] = await page.evaluate(
+                """() => { const out = []; const roots = ['#column-center', '#auth-pages', '#column-left'];
+                   const walk = (e, d) => { if (d > 7 || !(e instanceof Element)) return;
+                     const r = e.getBoundingClientRect(); if (r.width > 0 && r.height > 0) {
+                       const cls = String(e.getAttribute('class') || '').trim().split(/\s+/).join('.').slice(0, 120);
+                       const mid = e.getAttribute('data-mid') ? ' data-mid=' + e.getAttribute('data-mid') : '';
+                       out.push('  '.repeat(d) + e.tagName.toLowerCase() + (e.id ? '#' + e.id : '') + (cls ? '.' + cls : '') + mid + ' [' + Math.round(r.width) + 'x' + Math.round(r.height) + ']'); }
+                     [...e.children].forEach(c => walk(c, d + 1)); };
+                   for (const sel of roots) { const el = document.querySelector(sel); if (el) { out.push('ROOT ' + sel); walk(el, 0); } }
+                   return out.slice(0, 400); }"""
+            )
+            out["text"] = (await page.inner_text("body"))[:600]
+            if screenshot_path:
+                Path(screenshot_path).parent.mkdir(parents=True, exist_ok=True)
+                await page.screenshot(path=screenshot_path)
+                out["screenshot"] = screenshot_path
+        except Exception as e:
+            out["error"] = f"{type(e).__name__}: {e}"
+        return out
 
     def _build_screenshot_model(self, path: str, region: Region) -> Screenshot:
         data = Path(path).read_bytes()

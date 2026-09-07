@@ -3,6 +3,30 @@
 All notable changes to Graea are recorded here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.1.3] — 2026-09-07
+
+Visual eye against the redesigned Telegram Web K (field report: "visual eye
+broken, structural eye fine").
+
+- `is_logged_in()` no longer trusts a bare `#column-left` (it exists, hidden,
+  on the QR screen). Logged-out is detected via `body.has-auth-pages` /
+  visible `#auth-pages`; logged-in requires a visible left column or chat
+  rows. `status --json` and `login-web` now agree; `login-web` shows the QR
+  instead of "already".
+- SELECTORS rewritten for WebK's CSS-module hashed class names: stable ids
+  (`#auth-pages`, `#column-center`, `#chatlist-container`), class-substring
+  patterns (`[class*='qrContainer']`, `[class*='_bubble_']`) and WebK's
+  `data-mid` message attribute. Login-screen anchors verified against a live
+  DOM dump; post-login bubble selectors are best-effort patterns.
+- Element lookups wait for `visible`, not `attached`.
+- Screenshots never fail: last messages → chat column → viewport fallback
+  chain; `Screenshot.fallback` says which one was used and the step gets a
+  note.
+- New `graea web-probe`: dumps logged-in verdict, per-selector match/visible
+  counts, a visible-element tree and a viewport PNG, for field patching.
+- New `GRAEA_SELECTORS_FILE` (JSON `{role: [css, ...]}`) overrides selectors
+  without a code change.
+
 ## [0.1.2] — 2026-09-07
 
 Fixes from a first-run field report from an unattended Cline agent running

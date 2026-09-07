@@ -36,7 +36,8 @@ class Settings(BaseSettings):
     web_url: str = "https://web.telegram.org/k/"
     web_viewport_width: int = 1100
     web_viewport_height: int = 900
-    web_settle_ms: int = 800  # wait after action before screenshot
+    web_settle_ms: int = 800
+    selectors_file: Optional[Path] = None  # JSON {role: [css, ...]} tried before the built-in SELECTORS  # wait after action before screenshot
 
     # Timing
     reply_timeout_ms: int = 8000
