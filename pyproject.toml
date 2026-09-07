@@ -4,11 +4,11 @@ build-backend = "hatchling.build"
 
 [project]
 name = "graea"
-version = "0.1.0"
+version = "0.1.1"
 description = "Give any LLM eyes on a Telegram bot: MTProto + screenshots + vision reader + DuckDB memory."
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "MIT" }
+license = { text = "Elastic-2.0" }
 dependencies = [
   "telethon>=1.36",
   "playwright>=1.45",

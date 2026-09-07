@@ -128,3 +128,10 @@ stack, and `docs/LLM-GUIDE.md` for how an LLM should drive the MCP tools.
 - One driver at a time. The Telethon session file and the DuckDB file are both single-writer, so run either the MCP server, the HTTP server, or CLI commands — not two of them against the same `data/` directory at once.
 - The Telegram Web selectors in `graea/visual/web.py` (`SELECTORS`) were written against WebK's known DOM but not verified on a live login; if screenshots come back empty, that dict is the only place to patch.
 - Private chats only; no groups, calls, or payments.
+
+## License
+
+Graea is source-available under the [Elastic License 2.0](LICENSE). You can
+use it, modify it, and ship it inside your own products and pipelines; you
+can't offer Graea itself to third parties as a hosted or managed service.
+Copyright (c) 2026 Joshua D. Hale.
