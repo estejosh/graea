@@ -159,5 +159,5 @@ authoritative way to find a shot regardless of this route's layout).
   caller relying on this route for images should double check the real
   layout `runner.py`/`store.py` write to.
 - Did not touch `graea/models.py`, `config.py`, `client/protocol.py`, or
-  any other agent's files. `docs/CONTRACT-NOTES.md` needed no additions —
+  any other agent's files. `docs/dev/CONTRACT-NOTES.md` needed no additions —
   the given `TestSession` signature was sufficient to build against.

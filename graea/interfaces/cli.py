@@ -22,6 +22,7 @@ from graea.config import Settings, get_settings
 from graea.engine.runner import TestSession
 from graea.engine.scenario import load_scenario
 from graea.models import Action, ActionKind, Health
+from graea.version import __version__, check_for_update, detect_install_mode, how_to_update
 
 try:
     from rich.console import Console
@@ -39,6 +40,22 @@ app.add_typer(session_app, name="session")
 # Swapped out by tests. Production default: the real TestSession.
 _session_factory: Callable[[Settings], Any] = TestSession
 _get_settings: Callable[[], Settings] = get_settings
+
+
+@app.callback()
+def _main(ctx: typer.Context) -> None:
+    """Runs before every subcommand: prints a one-line stderr update banner if
+    a newer graea release exists. Cheap (24h on-disk cache) and never raises.
+    Skipped for `mcp`/`serve` so those protocols' stdout/stderr stay clean."""
+    if ctx.invoked_subcommand in ("mcp", "serve"):
+        return
+    try:
+        settings = _get_settings()
+        info = check_for_update(settings)
+        if info is not None and info.update_available:
+            print(f"GRAEA_UPDATE: {info.current} -> {info.latest} (run: graea update)", file=sys.stderr)
+    except Exception:
+        pass
 
 
 def _print(msg: str) -> None:
@@ -295,6 +312,11 @@ def status(json_out: bool = typer.Option(False, "--json", help="Print the Health
         return health
 
     health = asyncio.run(go())
+    health.version = __version__
+    try:
+        health.update = check_for_update(settings)
+    except Exception:
+        health.update = None
 
     if json_out:
         print(health.model_dump_json(indent=2))
@@ -524,6 +546,81 @@ def runs(scenario: Optional[str] = typer.Option(None)) -> None:
         _table("runs", list(rows[0].keys()), [list(r.values()) for r in rows])
     else:
         _print("(no runs)")
+
+
+# --------------------------------------------------------------------------
+# version / update
+# --------------------------------------------------------------------------
+
+
+@app.command()
+def version() -> None:
+    """Print the installed graea version."""
+    _print(__version__)
+
+
+@app.command()
+def update(check: bool = typer.Option(False, "--check", help="Only check for an update; don't apply it.")) -> None:
+    """Check for a newer graea release and, unless --check, apply it.
+
+    Forces a fresh check (bypasses the 24h cache). How the update is applied
+    depends on the detected install mode: `podman pull` for a container
+    install, `git pull` + `pip install -e .` + `playwright install chromium`
+    for an editable/clone install, `pip install -U git+...` otherwise.
+    """
+    import subprocess
+
+    settings = _get_settings()
+    settings.ensure_dirs()
+    info = check_for_update(settings, force=True)
+
+    if info is None:
+        _print("GRAEA_UPDATE: could not check for updates (offline, disabled, or the check failed).")
+        return
+
+    if not info.update_available:
+        _print(f"GRAEA_UPDATE: up to date ({info.current}).")
+        return
+
+    _print(f"GRAEA_UPDATE: {info.current} -> {info.latest} available.")
+    for line in info.how_to_update:
+        _print(f"  {line}")
+
+    if check:
+        return
+
+    mode = detect_install_mode()
+
+    if mode == "container":
+        _print("GRAEA_UPDATE: running podman pull ghcr.io/estejosh/graea:latest")
+        result = subprocess.run(["podman", "pull", "ghcr.io/estejosh/graea:latest"])
+        if result.returncode != 0:
+            _print("GRAEA_UPDATE: pull failed (private repo, no network, or no image published yet).")
+            _print("GRAEA_UPDATE: rebuild locally instead:")
+            for line in how_to_update("container")[1:]:
+                _print(f"  {line}")
+            raise typer.Exit(code=1)
+    elif mode == "editable":
+        from graea.version import repo_root
+        root = repo_root() or Path.cwd()
+        steps = [
+            ["git", "-C", str(root), "pull", "--ff-only"],
+            [sys.executable, "-m", "pip", "install", "-e", str(root)],
+            [sys.executable, "-m", "playwright", "install", "chromium"],
+        ]
+        for step in steps:
+            _print(f"GRAEA_UPDATE: running {' '.join(step)}")
+            result = subprocess.run(step)
+            if result.returncode != 0:
+                raise typer.Exit(code=1)
+    else:  # pip
+        step = [sys.executable, "-m", "pip", "install", "-U", "git+https://github.com/estejosh/graea"]
+        _print(f"GRAEA_UPDATE: running {' '.join(step)}")
+        result = subprocess.run(step)
+        if result.returncode != 0:
+            raise typer.Exit(code=1)
+
+    _print("GRAEA_UPDATE: done.")
 
 
 # --------------------------------------------------------------------------

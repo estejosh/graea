@@ -49,6 +49,9 @@ class Settings(BaseSettings):
     http_host: str = "127.0.0.1"
     http_port: int = 8765
 
+    # Update check (graea/version.py)
+    check_updates: bool = True
+
     def bot_username(self) -> Optional[str]:
         if not self.bot:
             return None

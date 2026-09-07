@@ -16,7 +16,7 @@ Public API:
 Selectors for the WebK client change over releases; several candidates per
 role are tried in order (see SELECTORS below). The exact URL scheme verified
 against the WebK source/docs: `https://web.telegram.org/k/#@BotFather` opens
-a direct chat with that username. See docs/agent-reports/visual.md for which
+a direct chat with that username. See docs/dev/agent-reports/visual.md for which
 selectors are guesses that still need checking against a live login.
 """
 from __future__ import annotations

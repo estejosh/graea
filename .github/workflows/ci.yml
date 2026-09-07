@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install system deps (tesseract, for the OCR fallback reader)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends tesseract-ocr
+
+      - name: Install graea (+ dev, demo extras)
+        run: pip install -e ".[dev,demo]"
+
+      - name: ruff
+        run: ruff check .
+
+      - name: Install Playwright Chromium
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.pw-browsers
+        run: playwright install --with-deps chromium
+
+      - name: pytest
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.pw-browsers
+          GRAEA_OFFLINE: "1"
+        run: python -m pytest -q -p no:cacheprovider

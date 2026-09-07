@@ -288,6 +288,21 @@ class Scenario(BaseModel):
 
 
 # --------------------------------------------------------------------------
+# Update check
+# --------------------------------------------------------------------------
+
+
+class UpdateInfo(BaseModel):
+    """Result of checking GitHub for a newer graea release than what's installed."""
+    current: str
+    latest: str
+    update_available: bool
+    html_url: Optional[str] = None
+    how_to_update: list[str] = Field(default_factory=list)
+    checked_at: datetime = Field(default_factory=utcnow)
+
+
+# --------------------------------------------------------------------------
 # Health
 # --------------------------------------------------------------------------
 
@@ -305,3 +320,5 @@ class Health(BaseModel):
     bot: Optional[str] = None
     active_run_id: Optional[str] = None
     hint: Optional[str] = None
+    version: Optional[str] = None
+    update: Optional[UpdateInfo] = None

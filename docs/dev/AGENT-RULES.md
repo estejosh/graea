@@ -3,7 +3,7 @@
 - Repo root: /home/claude/graea. Package: `graea`. Python 3.11, async where I/O.
 - Read first: docs/SPEC.md, graea/models.py, graea/config.py, graea/client/protocol.py.
   These are the contracts. Do NOT edit them; if something is missing, add a
-  note in docs/CONTRACT-NOTES.md (append) describing what you needed and work
+  note in docs/dev/CONTRACT-NOTES.md (append) describing what you needed and work
   around it locally.
 - Only create/edit the files assigned to you. Other agents own the rest.
 - Every public function gets a docstring that says what it returns to the LLM.
@@ -18,5 +18,5 @@
   tesseract binary exists; pytesseract is NOT installed — call tesseract via subprocess.
 - Keep it practical. No abstractions beyond the spec. Prefer plain functions
   over class hierarchies unless the spec names a class.
-- Finish by writing a short summary in docs/agent-reports/<yourname>.md:
+- Finish by writing a short summary in docs/dev/agent-reports/<yourname>.md:
   files written, public API, what is untested/needs real creds, known gaps.

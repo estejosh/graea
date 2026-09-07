@@ -65,8 +65,16 @@ else
     exit 1
 fi
 
-echo "GRAEA_INSTALL: building graea:latest with $CONTAINER_CMD..."
-"$CONTAINER_CMD" build -t graea:latest -f Containerfile .
+echo "GRAEA_INSTALL: trying to pull ghcr.io/estejosh/graea:latest with $CONTAINER_CMD..."
+if "$CONTAINER_CMD" pull ghcr.io/estejosh/graea:latest >/dev/null 2>&1; then
+    "$CONTAINER_CMD" tag ghcr.io/estejosh/graea:latest graea:latest
+    echo "GRAEA_INSTALL: image source: ghcr"
+else
+    echo "GRAEA_INSTALL: pull failed (private repo, no image published yet, or offline) — building locally."
+    echo "GRAEA_INSTALL: building graea:latest with $CONTAINER_CMD..."
+    "$CONTAINER_CMD" build -t graea:latest -f Containerfile .
+    echo "GRAEA_INSTALL: image source: local"
+fi
 
 echo "GRAEA_INSTALL: running doctor inside the container..."
 set +e

@@ -10,7 +10,7 @@ Owns: `graea/store.py`, `graea/engine/diff.py`, `graea/engine/fingerprint.py`,
 - `graea/engine/fingerprint.py` — `fingerprint`.
 - `graea/engine/assertions.py` — `evaluate`, `evaluate_all`, all 16 `AssertionKind`s.
 - `tests/test_store.py`, `tests/test_diff.py`, `tests/test_assertions.py`, `tests/test_fingerprint.py`.
-- `docs/CONTRACT-NOTES.md` — one note (TIMESTAMPTZ workaround, see below).
+- `docs/dev/CONTRACT-NOTES.md` — one note (TIMESTAMPTZ workaround, see below).
 
 All tests pass: `python -m pytest -q` → 128 passed (65 of them mine; the rest
 are other agents' existing suites, unaffected).
@@ -140,7 +140,7 @@ Small behavioral notes worth knowing:
 - Everything is covered by fakes/`:memory:` DuckDB — no real Telegram/vision
   credentials involved anywhere in these four files.
 
-## Contract deviation (logged in docs/CONTRACT-NOTES.md)
+## Contract deviation (logged in docs/dev/CONTRACT-NOTES.md)
 
 SPEC.md's schema sketch says "Timestamps as TIMESTAMPTZ." DuckDB 1.5.5's
 Python client raises `_duckdb.InvalidInputException: Required module 'pytz'

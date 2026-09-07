@@ -196,6 +196,36 @@ export GRAEA_BOT=@your_demo_bot
 | Screenshots come back empty / `screenshot_error` set | Telegram Web shipped a DOM change. The `SELECTORS` dict at the top of `graea/visual/web.py` is the single place to patch — add a new candidate selector for the affected role, don't rewrite the surrounding logic. |
 | Two processes fighting over the same session/DB | Graea is single-writer: run only one of MCP server / HTTP server / CLI command against the same `./data` directory at a time. |
 
+## Staying current
+
+Graea checks GitHub for a newer release on its own — you don't need to poll
+manually, but it's cheap to ask (a 24h on-disk cache, 3s network cap, never
+raises): run `graea update --check` (or call the `graea_update_check` MCP
+tool) at the start of a session. Every non-`mcp`/`serve` CLI command also
+prints a one-line `GRAEA_UPDATE: <current> -> <latest> (run: graea update)`
+banner to stderr when one is available, `graea status --json` includes a
+`version`/`update` field, and every MCP tool result's `notes` carries the
+same banner text when a newer release exists — so you'll see it without
+asking.
+
+When a human tells you to update, run `graea update` (add `--check` to only
+report, never apply). It detects how this install was set up and does the
+right thing:
+
+- **Container** users get updates via `podman pull
+  ghcr.io/estejosh/graea:latest` — `graea update` does this from inside a
+  running container only when podman itself is reachable from there (usually
+  it isn't); prefer running the pull on the host, then re-run install.sh /
+  restart the MCP server's container.
+- **Editable/clone** installs (`pip install -e .` from a git checkout):
+  `graea update` runs `git pull --ff-only`, `pip install -e .`, and
+  `playwright install chromium` in sequence.
+- **Plain pip** installs: `graea update` runs `pip install -U
+  git+https://github.com/estejosh/graea`.
+
+Set `GRAEA_CHECK_UPDATES=0` (or `GRAEA_OFFLINE=1`, which also disables it) to
+turn the check off entirely — e.g. for an air-gapped environment.
+
 ## Reference
 
 - `docs/SETUP.md` — full manual setup (credentials, vision model, tesseract,

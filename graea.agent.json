@@ -203,5 +203,28 @@
   "vision": {
     "default_provider": "caller",
     "meaning": "the LLM driving Graea reads each step's screenshot image itself and reports back via the graea_submit_reading MCP tool (or POST /reading); no second model needed. Alternatives: openai_compatible (Ollama/vLLM/LM Studio/OpenRouter/OpenAI), anthropic, ocr, none."
+  },
+  "update": {
+    "check_cmd": {
+      "command_container": ["podman", "run", "--rm", "-v", "/ABSOLUTE/PATH/TO/graea/data:/data:Z", "--env-file", ".env", "graea:latest", "update", "--check"],
+      "command_venv": [".venv/bin/graea", "update", "--check"],
+      "mcp_tool": "graea_update_check",
+      "note": "cheap (24h on-disk cache) and safe to run at the start of every session; also folded automatically into `graea_status`/`graea_status` MCP tool output and into a stderr banner on every non-mcp/serve CLI command."
+    },
+    "update_cmd": {
+      "container": {
+        "command": ["podman", "pull", "ghcr.io/estejosh/graea:latest"],
+        "fallback_if_pull_fails": ["cd", "<repo>", "&&", "git pull", "&&", "podman build -t graea:latest -f Containerfile ."],
+        "note": "or run `graea update` inside the container image itself (it shells out to podman on the host, so prefer running the pull directly on the host as shown here)."
+      },
+      "editable": {
+        "command": [".venv/bin/graea", "update"],
+        "steps": ["cd <repo>", "git pull --ff-only", ".venv/bin/pip install -e .  (or pip install -e .)", "playwright install chromium"]
+      },
+      "pip": {
+        "command": ["pip", "install", "-U", "git+https://github.com/estejosh/graea"]
+      }
+    },
+    "note": "agents should run the check_cmd (or graea_update_check) once at the start of a session, and run update_cmd only when a human tells them to update. Container users always get updates via `podman pull ghcr.io/estejosh/graea:latest`."
   }
 }

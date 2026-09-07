@@ -14,7 +14,7 @@ here — we compute rendered_text and Keyboard ourselves).
 
 Never raises: any exception while pulling a field is caught and degrades the
 whole message to a minimal ObservedMessage with `raw['serialize_error']` set,
-per docs/AGENT-RULES.md ("failures are never silent").
+per docs/dev/AGENT-RULES.md ("failures are never silent").
 """
 from __future__ import annotations
 

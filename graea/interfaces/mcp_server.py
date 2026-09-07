@@ -26,7 +26,8 @@ from mcp.types import TextContent
 from graea.config import get_settings
 from graea.engine.runner import TestSession
 from graea.engine.scenario import load_scenario
-from graea.models import Action, ActionKind, AssertionSpec
+from graea.models import Action, ActionKind, AssertionSpec, UpdateInfo
+from graea.version import __version__, check_for_update
 
 mcp = FastMCP("graea")
 
@@ -34,6 +35,10 @@ mcp = FastMCP("graea")
 # is the real TestSession constructor.
 _session_factory: Callable[[], Any] = None  # set below, after TestSession import
 _session: Optional[TestSession] = None
+
+# Cached once per process, at session start, so per-step tool calls never hit
+# the network (check_for_update itself is a 24h on-disk cache too).
+_cached_update: Optional[UpdateInfo] = None
 
 
 async def _default_session_factory() -> TestSession:
@@ -48,10 +53,19 @@ _session_factory = _default_session_factory
 
 
 async def get_session() -> TestSession:
-    """Return the process-wide TestSession, starting it lazily on first call."""
-    global _session
+    """Return the process-wide TestSession, starting it lazily on first call.
+
+    Also runs (and caches for the process's lifetime) the update check exactly
+    once here, so later per-step tool calls can append an update note without
+    ever touching the network themselves.
+    """
+    global _session, _cached_update
     if _session is None:
         _session = await _session_factory()
+        try:
+            _cached_update = check_for_update(get_settings())
+        except Exception:
+            _cached_update = None
     return _session
 
 
@@ -89,6 +103,11 @@ def _run_summary_json(run, verbose: bool = False) -> str:
 
 def _step_content(step, verbose: bool = False) -> list:
     """[TextContent(compact StepResult JSON), Image(screenshot)] — image omitted if none."""
+    if _cached_update is not None and _cached_update.update_available:
+        step.notes = [
+            *step.notes,
+            f"update available: {_cached_update.current} -> {_cached_update.latest} (run: graea update)",
+        ]
     content: list = [TextContent(type="text", text=_step_json(step, verbose))]
     if step.screenshot is not None:
         content.append(Image(path=step.screenshot.path))
@@ -377,7 +396,36 @@ async def graea_status() -> list:
     """
     session = await get_session()
     health = await session.health()
+    health.version = __version__
+    health.update = _cached_update
     return _text(health.model_dump_json(indent=2))
+
+
+@mcp.tool()
+async def graea_update_check() -> list:
+    """Force a check for a newer graea release (bypasses the 24h cache) and return it.
+
+    Unlike the update info folded into `graea_status`/every step's `notes`
+    (which is read from the once-per-session cached check), this always
+    hits GitHub (bounded to 3s) — use it when you want a fresh answer, e.g.
+    right after telling the user you're about to check. Returns an
+    UpdateInfo JSON: `current`, `latest`, `update_available`, `html_url`,
+    `how_to_update` (commands for this install), `checked_at`. Never raises;
+    if the check is disabled (`GRAEA_CHECK_UPDATES=false`), offline
+    (`GRAEA_OFFLINE=1`), or GitHub is unreachable, returns
+    `{"update_available": false, "note": "..."}` instead.
+    """
+    global _cached_update
+    await get_session()
+    settings = get_settings()
+    info = check_for_update(settings, force=True)
+    _cached_update = info
+    if info is None:
+        return _text(json.dumps({
+            "update_available": False,
+            "note": "check disabled, offline, or the GitHub check failed/timed out",
+        }))
+    return _text(info.model_dump_json(indent=2))
 
 
 def main() -> None:

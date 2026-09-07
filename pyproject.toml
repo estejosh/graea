@@ -30,6 +30,11 @@ ocr = ["pytesseract>=0.3.10"]
 demo = ["python-telegram-bot>=21.0"]
 dev = ["pytest>=8.0", "pytest-asyncio>=0.23", "ruff>=0.4"]
 
+[project.urls]
+Homepage = "https://github.com/estejosh/graea"
+Repository = "https://github.com/estejosh/graea"
+Changelog = "https://github.com/estejosh/graea/blob/main/CHANGELOG.md"
+
 [project.scripts]
 graea = "graea.interfaces.cli:app"
 graea-mcp = "graea.interfaces.mcp_server:main"

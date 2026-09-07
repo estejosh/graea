@@ -69,7 +69,8 @@ ENV GRAEA_SESSION=/data/graea.session \
     GRAEA_DB=/data/graea.duckdb \
     GRAEA_SHOTS=/data/shots \
     GRAEA_WEB_PROFILE=/data/web-profile \
-    GRAEA_WEB_HEADLESS=true
+    GRAEA_WEB_HEADLESS=true \
+    GRAEA_IN_CONTAINER=1
 
 USER graea
 

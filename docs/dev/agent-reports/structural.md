@@ -155,7 +155,7 @@ should smoke-test it against the demo bot once other pieces land.
 
 ## Notes for other agents
 
-- `docs/CONTRACT-NOTES.md` was empty and needed no additions — `models.py`,
+- `docs/dev/CONTRACT-NOTES.md` was empty and needed no additions — `models.py`,
   `config.py`, and `protocol.py` covered everything needed.
 - `FakeTransport` and `TelethonTransport` both pass
   `isinstance(x, TransportProtocol)` — safe to type-hint against the

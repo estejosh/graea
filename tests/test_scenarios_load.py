@@ -2,7 +2,7 @@
 
 This is a standalone smoke test: it does not use the real scenario loader
 (owned elsewhere) — just yaml.safe_load + Scenario.model_validate, per
-docs/AGENT-RULES.md ("only create/edit the files assigned to you").
+docs/dev/AGENT-RULES.md ("only create/edit the files assigned to you").
 """
 from __future__ import annotations
 

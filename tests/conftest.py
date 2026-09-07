@@ -1,7 +1,7 @@
 """Shared pytest fixtures for the interfaces tests.
 
 `FakeSession` implements the exact public API that `graea.engine.runner.TestSession`
-will expose (see docs/AGENT-RULES.md instructions to the "interfaces" agent), with
+will expose (see docs/dev/AGENT-RULES.md instructions to the "interfaces" agent), with
 canned, deterministic models — no Telegram credentials, no network, no real DuckDB.
 It is used to monkeypatch each interface module's session factory
 (`mcp_server._session_factory`, `cli._session_factory`, `http._session_factory`).
@@ -281,6 +281,15 @@ class FakeSession:
     @property
     def last_step(self) -> Optional[StepResult]:
         return self._last_step
+
+
+@pytest.fixture(autouse=True)
+def _no_network_update_checks(monkeypatch):
+    """Every test runs offline by default (graea/version.py:check_for_update
+    short-circuits on GRAEA_OFFLINE=1) so the CLI's every-command banner and
+    the MCP session-start check never hit the network in the suite. Tests
+    that specifically exercise check_for_update unset this themselves."""
+    monkeypatch.setenv("GRAEA_OFFLINE", "1")
 
 
 @pytest.fixture
