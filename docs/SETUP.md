@@ -170,3 +170,17 @@ unauthorized slate.
   from the project directory.
 - After the first `login-web`, set `GRAEA_WEB_HEADLESS=true` (the
   default) for all subsequent runs — CI, scheduled runs, etc.
+
+## Web login notes (from the field)
+
+- Keep `GRAEA_WEB_HEADLESS=true` (the default) and let `graea login-web`
+  screenshot the QR for you. Headed mode against an Xwayland/mutter DISPLAY
+  has hung on the first navigation; headless loads in ~1.5s.
+- Telegram Web K lands on the phone-number form; `login-web` clicks through
+  to the QR page itself and waits for the QR canvas to actually render.
+  If it prints a blank-canvas warning, Telegram did not issue a token (rate
+  limit or refusal): wait a few minutes and re-run.
+- Inside the container, `web.telegram.org` may resolve to an IPv6 address
+  with no route. Chromium falls back to IPv4 on its own; if your resolver is
+  IPv6-only, run podman with `--network=slirp4netns:enable_ipv6=false` or
+  add `--disable-ipv6` via a Chromium flag file, and prefer IPv4 DNS.

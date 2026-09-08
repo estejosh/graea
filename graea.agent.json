@@ -105,7 +105,9 @@
       "human_action": "scan the QR image at <path> (e.g. data/login-qr.png) with the Telegram app on the spare account: Settings > Devices > Link Desktop Device.",
       "respond_by": "send the human the PNG at <path>; the QR is re-screenshotted to the same path roughly every 20s until scanned",
       "success_line": "GRAEA_LOGIN_WEB: ok",
-      "already_line": "GRAEA_LOGIN_WEB: already"
+      "already_line": "GRAEA_LOGIN_WEB: already",
+      "blank_qr_line_prefix": "GRAEA_LOGIN_WEB: warning \u2014 QR canvas is blank",
+      "on_blank_qr": "do not send the image; wait a few minutes and re-run login-web (Telegram rate-limited or refused the login token)"
     }
   },
   "session_export": {
@@ -223,7 +225,8 @@
     "empty screenshots": "Telegram Web's DOM changed. Run `graea web-probe` and attach data/web-probe.json + web-probe.png to the report. Hot-fix without code: GRAEA_SELECTORS_FILE=/path/sel.json with {\"message_bubble\": [\"<css>\"], ...}; entries are tried before the built-in SELECTORS in graea/visual/web.py.",
     "vision pending": "vision.error says pending: you are the reader. Look at the returned screenshot image and call graea_submit_reading. Only switch GRAEA_VISION_PROVIDER to an engine if the driving LLM cannot see images.",
     "login prints GRAEA_LOGIN: error ...": "a Telegram-side rejection (bad phone format, wrong/expired code, missing 2FA password, bad api_id/api_hash, rate limit) was caught and printed as one line with a hint \u2014 never a traceback. Fix per the hint (e.g. correct GRAEA_PHONE, set GRAEA_2FA_PASSWORD, wait out a FloodWaitError) and re-run login.",
-    "status --json hint mentions connect timed out": "the first MTProto connect can take longer than GRAEA_CONNECT_TIMEOUT_S (default 20s). Just re-run status; it isn't a credentials problem by itself."
+    "status --json hint mentions connect timed out": "the first MTProto connect can take longer than GRAEA_CONNECT_TIMEOUT_S (default 20s). Just re-run status; it isn't a credentials problem by itself.",
+    "blank qr": "login-web printed the blank-canvas warning: Telegram issued no login token. Wait and retry; keep headless mode; check the container can reach web.telegram.org over IPv4."
   },
   "vision": {
     "default_provider": "caller",

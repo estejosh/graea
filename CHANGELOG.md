@@ -3,6 +3,24 @@
 All notable changes to Graea are recorded here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.1.4] — 2026-09-08
+
+Web login on the current Telegram Web K (field report + patch from a real
+rootless-podman install).
+
+- Telegram Web K now lands on the phone-number form; `login-web` clicks
+  through to "Log in by QR code" when no QR is visible.
+- The QR is drawn on a canvas that stays blank behind a preloader until
+  Telegram issues a login token (and stays blank when it refuses one).
+  `login-web` now waits up to 20s for the canvas to contain both dark and
+  light opaque pixels, screenshots the canvas tightly, and prints
+  `GRAEA_LOGIN_WEB: warning — QR canvas is blank` instead of handing over a
+  spinner. (A never-drawn canvas is transparent, which a naive dark-pixel
+  count mistakes for a code; alpha is checked.)
+- Docs: headless + screenshot-the-QR is the reliable path (headed mode
+  against Xwayland hung on navigation); IPv6-only resolvers may need
+  `--disable-ipv6` / an IPv4 preference in the container.
+
 ## [0.1.3] — 2026-09-07
 
 Visual eye against the redesigned Telegram Web K (field report: "visual eye

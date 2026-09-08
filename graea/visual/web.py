@@ -140,6 +140,7 @@ class TelegramWeb:
     def __init__(self, settings: Settings):
         self.settings = settings
         self.selectors = _merge_selector_overrides(settings)
+        self.last_qr_rendered: Optional[bool] = None
         self._pw = None
         self._context: Optional[BrowserContext] = None
         self._page: Optional[Page] = None
@@ -248,17 +249,88 @@ class TelegramWeb:
             await page.wait_for_timeout(500)
         return False
 
+    async def _click_text_button(self, text: str) -> bool:
+        """Click a visible button/link whose text matches `text` (case-insensitive).
+        Returns True if something was clicked."""
+        page = self._require_page()
+        for sel in (f"button:has-text('{text}')", f"text={text}", f"[role=button]:has-text('{text}')"):
+            try:
+                btn = page.locator(sel).first
+                if await btn.count() and await btn.is_visible():
+                    await btn.click(timeout=5000)
+                    return True
+            except Exception:
+                continue
+        return False
+
+    QR_CANVAS = "[class*='qrContainer'] canvas, #auth-pages canvas"
+
+    async def _qr_pixels(self) -> tuple[int, int]:
+        """(dark, light) opaque pixel counts on the QR canvas. A never-drawn
+        canvas is fully transparent (reads as 0,0,0,0 — which a naive "dark"
+        count would mistake for a rendered code), so alpha is required."""
+        page = self._require_page()
+        try:
+            res = await page.evaluate(
+                """(sel) => { const c = document.querySelector(sel); if (!c || !c.width) return [0, 0];
+                     try { const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+                           let dark = 0, light = 0;
+                           for (let i = 0; i < d.length; i += 4) { if (d[i + 3] < 128) continue;
+                             if (d[i] < 128) dark++; else light++; }
+                           return [dark, light]; }
+                     catch (e) { return [-1, -1]; } }""",
+                self.QR_CANVAS,
+            )
+            return int(res[0]), int(res[1])
+        except Exception:
+            return -1, -1
+
+    async def _wait_qr_rendered(self, timeout_s: int = 20) -> bool:
+        """Wait for the QR canvas to become non-blank (Telegram actually drew
+        the login token). False if it stays blank: Telegram rate-limited or
+        refused the token, and the canvas is a preloader spinner."""
+        page = self._require_page()
+        for _ in range(max(1, timeout_s)):
+            dark, light = await self._qr_pixels()
+            if dark > 500 and light > 500:  # a real QR has both; a blank or solid canvas has not
+                return True
+            await page.wait_for_timeout(1000)
+        return False
+
     async def login_qr_screenshot(self, path: str) -> str:
-        """Navigate to the login screen and screenshot the QR code so the
-        CLI can display it to the user. Returns the path written."""
+        """Get to the QR login screen and screenshot the QR so the CLI can
+        hand it to a human. Returns the path written; sets
+        `self.last_qr_rendered` (False when the canvas stayed blank, i.e.
+        Telegram did not issue a login token — the caller should warn).
+
+        Telegram Web K now lands on the phone-number form by default, so if
+        no QR is visible we click "Log in by QR code" first, then wait for the
+        canvas to actually render instead of screenshotting the preloader."""
         page = self._require_page()
         await page.goto(self.settings.web_url, wait_until="domcontentloaded", timeout=15000)
         await page.wait_for_timeout(self.settings.web_settle_ms)
 
-        qr = await self._first_visible("login_qr", timeout_ms=8000)
+        if await self._first_visible("login_qr", timeout_ms=2000) is None:
+            for label in ("LOG IN BY QR CODE", "Log in by QR code", "QR"):
+                if await self._click_text_button(label):
+                    break
+            await page.wait_for_timeout(self.settings.web_settle_ms)
+
+        rendered = await self._wait_qr_rendered(timeout_s=20)
+        self.last_qr_rendered = rendered
         Path(path).parent.mkdir(parents=True, exist_ok=True)
+
+        if rendered:
+            canvas = page.locator(self.QR_CANVAS).first
+            try:
+                if await canvas.count():
+                    await canvas.screenshot(path=path)
+                    return path
+            except Exception:
+                pass
+
+        qr = await self._first_visible("login_qr", timeout_ms=4000)
         if qr is not None:
-            # capture the whole login card, not just the code: it carries the instructions
             card = await self._first_visible("auth_page", timeout_ms=1000)
             await (card or qr).screenshot(path=path)
         else:

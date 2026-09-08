@@ -230,3 +230,66 @@ async def test_logged_in_fixture_and_selector_overrides(tmp_path, fixture_html_p
         assert shot.height <= 60  # the override narrowed capture to a single 40px bubble
     finally:
         await web.stop()
+
+
+PHONE_FORM_HTML = """<!doctype html><html><body class="has-auth-pages">
+<div id="auth-pages" style="width:800px;height:600px">
+ <div id="phone" class="_card_x _pageSign_x" style="width:392px;height:400px">
+   <div>Sign in to Telegram</div><input placeholder="Phone number">
+   <button id="toqr" onclick="document.getElementById('phone').style.display='none';document.getElementById('qr').style.display='block';setTimeout(draw, %d)">LOG IN BY QR CODE</button>
+ </div>
+ <div id="qr" class="_card_x _pageSignQR_x" style="display:none;width:392px;height:572px">
+   <div class="_qrContainer_x" style="width:240px;height:240px"><canvas width="240" height="240"></canvas></div>
+   <div>Log in by QR Code</div>
+ </div>
+</div>
+<script>
+function draw(){ const c=document.querySelector('canvas').getContext('2d'); c.fillStyle='#fff'; c.fillRect(0,0,240,240);
+  c.fillStyle='#000'; for(let y=0;y<240;y+=20) for(let x=0;x<240;x+=20) if((x/20+y/20)%%2==0) c.fillRect(x,y,20,20); }
+</script></body></html>"""
+
+
+@pytest.mark.skipif(not PLAYWRIGHT_AVAILABLE, reason="playwright not installed")
+@pytest.mark.asyncio
+async def test_login_qr_clicks_through_phone_form_and_waits_for_render(tmp_path):
+    fixture = tmp_path / "phone.html"
+    fixture.write_text(PHONE_FORM_HTML % 1500)  # QR draws 1.5s after the click
+    settings = Settings(web_profile=tmp_path / "p5", web_headless=True, web_settle_ms=50,
+                        web_url=f"file://{fixture}")
+    web = TelegramWeb(settings)
+    await web.start()
+    try:
+        out = tmp_path / "qr.png"
+        await web.login_qr_screenshot(str(out))
+        assert web.last_qr_rendered is True
+        with Image.open(out) as im:
+            assert im.size[0] <= 260 and im.size[1] <= 260  # tight canvas capture, not the form
+            px = im.convert("L").getdata()
+            dark = sum(1 for v in px if v < 128) / len(px)
+            assert 0.3 < dark < 0.7  # checkerboard ~50% dark: a drawn QR, not a blank canvas
+    finally:
+        await web.stop()
+
+
+@pytest.mark.skipif(not PLAYWRIGHT_AVAILABLE, reason="playwright not installed")
+@pytest.mark.asyncio
+async def test_login_qr_reports_blank_canvas(tmp_path, monkeypatch):
+    fixture = tmp_path / "blank.html"
+    fixture.write_text(PHONE_FORM_HTML % 999999)  # QR never draws
+    settings = Settings(web_profile=tmp_path / "p6", web_headless=True, web_settle_ms=50,
+                        web_url=f"file://{fixture}")
+    web = TelegramWeb(settings)
+    monkeypatch.setattr(web, "_wait_qr_rendered", lambda timeout_s=20: web._wait_qr_rendered_fast())
+    web._wait_qr_rendered_fast = lambda: _false()
+    await web.start()
+    try:
+        out = tmp_path / "qr.png"
+        await web.login_qr_screenshot(str(out))
+        assert web.last_qr_rendered is False
+        assert out.exists()
+    finally:
+        await web.stop()
+
+
+async def _false():
+    return False

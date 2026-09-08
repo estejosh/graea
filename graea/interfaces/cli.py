@@ -78,6 +78,14 @@ def _login_error_hint(exc: BaseException) -> str:
     return text.splitlines()[0] if text else name
 
 
+def _qr_line(web, qr_path: str) -> None:
+    if getattr(web, "last_qr_rendered", None) is False:
+        _print_err("GRAEA_LOGIN_WEB: warning — QR canvas is blank (Telegram did not issue a login token; "
+                   "rate-limited or refused). The saved image is NOT scannable; retrying in the next cycle.")
+    else:
+        _print_path_line("GRAEA_LOGIN_WEB: scan ", qr_path)
+
+
 def _print_login_error(exc: BaseException) -> None:
     _print_err(f"GRAEA_LOGIN: error {type(exc).__name__} — {_login_error_hint(exc)}")
 
@@ -314,7 +322,7 @@ def login_web(headed: bool = typer.Option(False, help="Run a visible browser ins
             qr_path = str(settings.shots.parent / "login-qr.png")
             Path(qr_path).parent.mkdir(parents=True, exist_ok=True)
             await web.login_qr_screenshot(qr_path)
-            _print_path_line("GRAEA_LOGIN_WEB: scan ", qr_path)
+            _qr_line(web, qr_path)
 
             deadline = time.monotonic() + timeout
             next_shot = time.monotonic() + rescreenshot_every_s
@@ -326,7 +334,7 @@ def login_web(headed: bool = typer.Option(False, help="Run a visible browser ins
                     return True
                 if time.monotonic() >= next_shot:
                     await web.login_qr_screenshot(qr_path)
-                    _print_path_line("GRAEA_LOGIN_WEB: scan ", qr_path)
+                    _qr_line(web, qr_path)
                     next_shot = time.monotonic() + rescreenshot_every_s
             _print("GRAEA_LOGIN_WEB: timed out")
             return False
