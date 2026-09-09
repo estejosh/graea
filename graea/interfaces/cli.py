@@ -332,6 +332,12 @@ def login_web(headed: bool = typer.Option(False, help="Run a visible browser ins
                 if await web.wait_for_login(timeout_s=wait_chunk):
                     _print("GRAEA_LOGIN_WEB: ok")
                     return True
+                if getattr(web, "password_needed", False):
+                    _print_err("GRAEA_LOGIN_WEB: error 2FA password required — the account has two-step "
+                               "verification; set GRAEA_2FA_PASSWORD (or it was rejected) and re-run login-web")
+                    raise typer.Exit(code=1)
+                if await web._password_prompt_showing():
+                    continue  # never navigate away while the password page is up
                 if time.monotonic() >= next_shot:
                     await web.login_qr_screenshot(qr_path)
                     _qr_line(web, qr_path)

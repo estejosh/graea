@@ -141,6 +141,7 @@ class TelegramWeb:
         self.settings = settings
         self.selectors = _merge_selector_overrides(settings)
         self.last_qr_rendered: Optional[bool] = None
+        self.password_needed: bool = False
         self._pw = None
         self._context: Optional[BrowserContext] = None
         self._page: Optional[Page] = None
@@ -225,11 +226,28 @@ class TelegramWeb:
 
     # -- auth ---------------------------------------------------------------
 
+    async def _positive_login_signal(self) -> bool:
+        """A visible chat list is the only thing that proves we are logged in."""
+        if await self._is_visible("#chatlist-container") or await self._is_visible("#column-left"):
+            return True
+        return await self._first_visible("chat_list", timeout_ms=200) is not None
+
+    async def _qr_or_phone_screen(self) -> bool:
+        """Unambiguous logged-out screen: the QR card or the phone form is visible."""
+        for sel in ("[class*='qrContainer']", "[class*='pageSignQR']", "[class*='pageSign']",
+                    ".input-field-phone", "[class*='phone'] input"):
+            if await self._is_visible(sel):
+                return True
+        return False
+
     async def is_logged_in(self) -> bool:
-        """True only on a positive logged-in signal (visible left column with
-        chat rows) AND no auth page showing. The QR/phone login screen always
-        yields False — `#column-left` alone is never trusted because it exists
-        (hidden) on the login screen too."""
+        """True on a positive logged-in signal (visible left column / chat
+        rows). The SPA keeps `body.has-auth-pages` for ~5-10s while it moves
+        from the login screen to the chat list, so that class is never used
+        to conclude "logged out" early: we poll for a positive signal for up to
+        settings.web_login_settle_s and only then return False. A visible QR
+        card / phone form with no chat list for a few seconds is the one
+        unambiguous logged-out state and short-circuits."""
         page = self._require_page()
         # Only navigate if we are not already on the web client: a health check
         # must never pull the page away from an open chat mid-run.
@@ -238,15 +256,20 @@ class TelegramWeb:
                 await page.goto(self.settings.web_url, wait_until="domcontentloaded", timeout=15000)
             except Exception:
                 pass
-        # give the SPA a moment to decide which page it is showing
-        for _ in range(10):
-            if await self._auth_page_showing():
-                return False
-            if await self._is_visible("#column-left") or await self._is_visible("#chatlist-container"):
+        settle_ms = max(1000, int(self.settings.web_login_settle_s) * 1000)
+        waited = 0
+        logged_out_hits = 0
+        while waited <= settle_ms:
+            if await self._positive_login_signal():
                 return True
-            if await self._first_visible("chat_list", timeout_ms=300) is not None:
-                return True
+            if await self._qr_or_phone_screen():
+                logged_out_hits += 1
+                if logged_out_hits >= 4:  # ~2s of an unambiguous login screen
+                    return False
+            else:
+                logged_out_hits = 0
             await page.wait_for_timeout(500)
+            waited += 500
         return False
 
     async def _click_text_button(self, text: str) -> bool:
@@ -337,21 +360,61 @@ class TelegramWeb:
             await page.screenshot(path=path)
         return path
 
+    PASSWORD_FIELD = ".input-field-password"
+
+    async def _password_prompt_showing(self) -> bool:
+        return await self._is_visible(self.PASSWORD_FIELD)
+
+    async def _submit_2fa_password(self) -> bool:
+        """Fill Telegram Web K's two-step-verification prompt. The real
+        <input type=password> elements are hidden ("stealthy"); the visible
+        `.input-field-password` div intercepts pointer events, so: click the
+        div, type with the keyboard, press Enter. fill() on the hidden input
+        does not work. Returns True if a password was submitted."""
+        pw = self.settings.two_fa_password
+        if not pw:
+            return False
+        page = self._require_page()
+        try:
+            await page.locator(self.PASSWORD_FIELD).first.click(timeout=5000)
+            await page.keyboard.type(pw, delay=20)
+            await page.keyboard.press("Enter")
+            await page.wait_for_timeout(1500)
+            if await self._password_prompt_showing():
+                # Enter may not submit on some builds; try the NEXT button.
+                await self._click_text_button("NEXT")
+                await page.wait_for_timeout(1500)
+            return True
+        except Exception:
+            return False
+
     async def wait_for_login(self, timeout_s: int) -> bool:
-        """Poll is_logged_in() until True or timeout_s elapses. Returns
-        whether login completed in time."""
+        """Poll until the chat list is visible or timeout_s elapses. If the
+        two-step-verification prompt appears (after a QR scan on a 2FA
+        account), submit settings.two_fa_password once; without a password
+        configured, sets `self.password_needed = True` so the CLI can say so.
+        Returns whether login completed in time."""
         page = self._require_page()
         deadline_ms = timeout_s * 1000
-        poll_ms = 2000
+        poll_ms = 1000
         waited = 0
+        self.password_needed = False
+        password_tried = False
         while waited <= deadline_ms:
-            if not await self._auth_page_showing() and (
-                await self._is_visible("#column-left") or await self._is_visible("#chatlist-container")
-            ):
+            if await self._positive_login_signal():
                 return True
+            if await self._password_prompt_showing():
+                if not password_tried:
+                    password_tried = True
+                    if not await self._submit_2fa_password():
+                        self.password_needed = True
+                        return False
+                elif waited > 15000 and await self._password_prompt_showing():
+                    self.password_needed = True  # wrong password, or not accepted
+                    return False
             await page.wait_for_timeout(poll_ms)
             waited += poll_ms
-        return await self.is_logged_in()
+        return await self._positive_login_signal()
 
     # -- navigation -----------------------------------------------------------
 
@@ -363,7 +426,7 @@ class TelegramWeb:
         uname = _username_for_url(bot_username)
         url = self.settings.web_url.rstrip("/") + f"/#@{uname}"
         await page.goto(url, wait_until="domcontentloaded", timeout=15000)
-        if await self._auth_page_showing():
+        if not await self.is_logged_in():
             raise RuntimeError(f"open_chat({bot_username!r}): web client is not logged in (run `graea login-web`)")
         chat_column = await self._first_visible("chat_column", timeout_ms=10000)
         if chat_column is None:
@@ -446,8 +509,17 @@ class TelegramWeb:
                 else:
                     chat_column = await self._first_visible("chat_column", timeout_ms=5000)
                     if chat_column is not None:
-                        fallback = "no message bubbles matched; captured the chat column instead"
-                        await chat_column.screenshot(path=path, timeout=10000)
+                        box = await chat_column.bounding_box()
+                        if box and box["height"] > 200:
+                            # newest messages sit at the bottom: capture the lower half of the column
+                            frac = 0.5
+                            clip = {"x": box["x"], "y": box["y"] + box["height"] * (1 - frac),
+                                    "width": box["width"], "height": box["height"] * frac}
+                            fallback = "no message bubbles matched; captured the lower half of the chat column"
+                            await page.screenshot(path=path, clip=clip)
+                        else:
+                            fallback = "no message bubbles matched; captured the chat column instead"
+                            await chat_column.screenshot(path=path, timeout=10000)
                     else:
                         fallback = "no bubbles and no visible chat column; captured the viewport instead"
                         await page.screenshot(path=path)

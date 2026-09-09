@@ -3,6 +3,26 @@
 All notable changes to Graea are recorded here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.1.5] — 2026-09-09
+
+Post-v0.1.4 verification run (rootless podman, headless, 2FA account).
+
+- `is_logged_in()` false negative fixed: WebK keeps `body.has-auth-pages` for
+  5-10s after the chat list is already up. Detection now polls for a positive
+  signal (visible `#chatlist-container` / `#column-left` / chat rows) for up
+  to `GRAEA_WEB_LOGIN_SETTLE_S` (20s) and only short-circuits to "logged out"
+  on an unambiguous QR/phone screen. `status`, `web-probe` and `open_chat`
+  all use it.
+- Two-step verification: `login-web` fills Telegram Web's password prompt
+  from `GRAEA_2FA_PASSWORD` (click `.input-field-password`, keyboard-type,
+  Enter; the real inputs are hidden "stealthy" fields). Without the variable
+  it prints `GRAEA_LOGIN_WEB: error 2FA password required` and exits 1, and
+  never navigates away while the password page is showing.
+- `last_messages` fallback now captures the lower half of the chat column
+  (where the newest messages are) instead of the whole column, until the
+  per-message selectors are confirmed from a live `web-probe`.
+- Docs: 2FA step, ~10s web settle, stay headless + live-QR-viewer tip.
+
 ## [0.1.4] — 2026-09-08
 
 Web login on the current Telegram Web K (field report + patch from a real

@@ -4,6 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Literal, Optional
 
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -37,6 +38,8 @@ class Settings(BaseSettings):
     web_viewport_width: int = 1100
     web_viewport_height: int = 900
     web_settle_ms: int = 800
+    web_login_settle_s: int = 20  # how long is_logged_in() waits for a positive signal after launch
+    two_fa_password: Optional[str] = Field(None, validation_alias=AliasChoices("GRAEA_2FA_PASSWORD", "GRAEA_TWO_FA_PASSWORD"))
     selectors_file: Optional[Path] = None  # JSON {role: [css, ...]} tried before the built-in SELECTORS  # wait after action before screenshot
 
     # Timing

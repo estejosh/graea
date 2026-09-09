@@ -293,3 +293,92 @@ async def test_login_qr_reports_blank_canvas(tmp_path, monkeypatch):
 
 async def _false():
     return False
+
+
+TRANSITION_HTML = """<!doctype html><html><body class="has-auth-pages">
+<div id="column-left" style="width:0;height:0"><div id="chatlist-container"></div></div>
+<div id="column-center" style="width:0;height:0"></div>
+<div id="auth-pages" style="width:800px;height:600px"><div>Loading…</div></div>
+<script>
+setTimeout(() => {
+  document.getElementById('auth-pages').style.display = 'none';
+  document.getElementById('column-left').style.cssText = 'width:360px;height:600px';
+  document.getElementById('chatlist-container').innerHTML = '<ul><li data-peer-id="1">chat</li></ul>';
+  document.getElementById('chatlist-container').style.cssText = 'width:360px;height:500px';
+  setTimeout(() => document.body.classList.remove('has-auth-pages'), 4000);
+}, 2500);
+</script></body></html>"""
+
+
+@pytest.mark.skipif(not PLAYWRIGHT_AVAILABLE, reason="playwright not installed")
+@pytest.mark.asyncio
+async def test_is_logged_in_tolerates_transient_has_auth_pages(tmp_path):
+    """Field report: the SPA keeps body.has-auth-pages for seconds after the
+    chat list is already visible. The class must never yield a false negative."""
+    fixture = tmp_path / "transition.html"
+    fixture.write_text(TRANSITION_HTML)
+    settings = Settings(web_profile=tmp_path / "p8", web_headless=True, web_settle_ms=50,
+                        web_url=f"file://{fixture}", web_login_settle_s=10)
+    web = TelegramWeb(settings)
+    await web.start()
+    try:
+        await web._page.goto(f"file://{fixture}")
+        assert await web.is_logged_in() is True  # chat list appears at 2.5s while the class is still set
+    finally:
+        await web.stop()
+
+
+PASSWORD_HTML = """<!doctype html><html><body class="has-auth-pages">
+<div id="column-left" style="width:0;height:0"><div id="chatlist-container"></div></div>
+<div id="auth-pages" style="width:800px;height:600px">
+  <div class="_card_x"><div>Enter Your Password</div>
+    <input type="password" class="stealthy" tabindex="-1" style="opacity:0;position:absolute">
+    <div class="input-field input-field-password" style="width:300px;height:48px;border:1px solid #888"
+         onclick="document.querySelector('input.stealthy').focus()"></div>
+    <button onclick="check()">NEXT</button></div></div>
+<script>
+const inp = document.querySelector('input.stealthy');
+inp.addEventListener('keydown', e => { if (e.key === 'Enter') check(); });
+function check(){ if (inp.value === 'hunter2') {
+  document.getElementById('auth-pages').style.display='none';
+  document.getElementById('column-left').style.cssText='width:360px;height:600px';
+  document.getElementById('chatlist-container').innerHTML='<ul><li data-peer-id="1">chat</li></ul>';
+  document.getElementById('chatlist-container').style.cssText='width:360px;height:500px'; } }
+</script></body></html>"""
+
+
+@pytest.mark.skipif(not PLAYWRIGHT_AVAILABLE, reason="playwright not installed")
+@pytest.mark.asyncio
+async def test_wait_for_login_submits_2fa_password(tmp_path, monkeypatch):
+    fixture = tmp_path / "pw.html"
+    fixture.write_text(PASSWORD_HTML)
+    monkeypatch.setenv("GRAEA_2FA_PASSWORD", "hunter2")
+    settings = Settings(web_profile=tmp_path / "p9", web_headless=True, web_settle_ms=50,
+                        web_url=f"file://{fixture}", web_login_settle_s=3)
+    assert settings.two_fa_password == "hunter2"
+    web = TelegramWeb(settings)
+    await web.start()
+    try:
+        await web._page.goto(f"file://{fixture}")
+        assert await web.wait_for_login(timeout_s=15) is True
+        assert web.password_needed is False
+    finally:
+        await web.stop()
+
+
+@pytest.mark.skipif(not PLAYWRIGHT_AVAILABLE, reason="playwright not installed")
+@pytest.mark.asyncio
+async def test_wait_for_login_flags_missing_2fa_password(tmp_path, monkeypatch):
+    fixture = tmp_path / "pw2.html"
+    fixture.write_text(PASSWORD_HTML)
+    monkeypatch.delenv("GRAEA_2FA_PASSWORD", raising=False)
+    settings = Settings(web_profile=tmp_path / "p10", web_headless=True, web_settle_ms=50,
+                        web_url=f"file://{fixture}", web_login_settle_s=3)
+    web = TelegramWeb(settings)
+    await web.start()
+    try:
+        await web._page.goto(f"file://{fixture}")
+        assert await web.wait_for_login(timeout_s=8) is False
+        assert web.password_needed is True
+    finally:
+        await web.stop()

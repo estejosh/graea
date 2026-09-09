@@ -184,3 +184,9 @@ unauthorized slate.
   with no route. Chromium falls back to IPv4 on its own; if your resolver is
   IPv6-only, run podman with `--network=slirp4netns:enable_ipv6=false` or
   add `--disable-ipv6` via a Chromium flag file, and prefer IPv4 DNS.
+- Two-step verification: set `GRAEA_2FA_PASSWORD` in `.env`. `graea login`
+  (MTProto) and `graea login-web` (Telegram Web) both use it; the web flow
+  clicks the visible `.input-field-password` and types the password because
+  the real inputs are hidden.
+- The web eye needs ~10-20s after launch to settle; `status --json` waits up
+  to `GRAEA_WEB_LOGIN_SETTLE_S` (20) for a positive logged-in signal.

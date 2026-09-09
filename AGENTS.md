@@ -146,6 +146,18 @@ Protocol:
 4. Wait for `GRAEA_LOGIN_WEB: ok`. If it prints `GRAEA_LOGIN_WEB: already`
    instead, the web session was already logged in — also success.
 
+**Two-step verification:** if the spare account has a 2FA password, put it
+in `.env` as `GRAEA_2FA_PASSWORD` before running `login-web`. After the QR
+scan Telegram Web shows "Enter Your Password"; `login-web` fills it itself
+(the visible `.input-field-password` div is clicked and the password typed
+with the keyboard — the real inputs are hidden). Without the variable it
+prints `GRAEA_LOGIN_WEB: error 2FA password required` and exits 1.
+
+**Stay headless.** `--headed` against Xwayland/mutter has hung on the first
+navigation. If a human wants to watch the QR refresh live, point a browser
+at a tiny local page that reloads `data/login-qr.png` every few seconds
+(`<img src="login-qr.png">` + `setInterval(() => img.src = 'login-qr.png?' + Date.now(), 3000)`).
+
 ### Session export — do this once, reuse everywhere
 
 After `graea login` succeeds once (anywhere), export a portable
@@ -184,6 +196,10 @@ vision-endpoint probe) and prints
 `{"ok": bool, "problems": [...], "vision_reachable": ..., "config": {...}}`
 (the `config` object never echoes the actual api_hash/phone, only
 set/missing/suspicious/placeholder), exiting 0/1.
+
+The web eye needs ~10-20s after launch to settle; `status --json` and
+`web-probe` wait for a positive logged-in signal (up to
+`GRAEA_WEB_LOGIN_SETTLE_S`, default 20) before reporting `web_logged_in`.
 
 ## 4. Register the MCP server
 
@@ -242,6 +258,7 @@ export GRAEA_BOT=@your_demo_bot
 | `status --json` hint mentions "not authorized" / "session ... " | The MTProto session was never logged in, or belongs to a different `api_id`/`api_hash`. Redo §2a, or fetch a fresh `GRAEA_SESSION_STRING`. |
 | `status --json` shows `web_logged_in: false` | Redo §2b. Make sure `GRAEA_WEB_PROFILE` is a persistent, writable, bind-mounted directory — not an ephemeral container path that resets every run. |
 | screenshots come back as the whole viewport / `screenshot fallback:` note, or `web_logged_in` looks wrong | Telegram Web changed its DOM. Run `graea web-probe` (add `--bot ''` to skip opening a chat) and attach `data/web-probe.json` + `web-probe.png` to the report; to hot-fix, write a `GRAEA_SELECTORS_FILE` JSON like `{"message_bubble": ["#column-center [data-mid]"]}` — its entries are tried before the built-ins. |
+| `GRAEA_LOGIN_WEB: error 2FA password required` | The account has two-step verification. Set `GRAEA_2FA_PASSWORD` in `.env` and re-run `login-web`. If it repeats with the variable set, the password was rejected. |
 | `GRAEA_LOGIN_WEB: warning — QR canvas is blank` | Telegram did not issue a login token (rate limit after repeated attempts, or refused). Wait a few minutes and re-run `login-web`; don't scan the saved image. Prefer headless mode (the default) — headed mode against Xwayland has hung on navigation. |
 | `vision.error` says `pending` | You are the reader (`GRAEA_VISION_PROVIDER=caller`, the default). Look at the screenshot image the tool returned and call `graea_submit_reading(description, issues)`. |
 | `doctor`'s `vision_reachable` is `false` | Point `GRAEA_VISION_BASE_URL` at a running OpenAI-compatible endpoint (Ollama's default is `http://localhost:11434/v1` on the host; from inside the container use `http://host.containers.internal:11434/v1`), or set `GRAEA_VISION_PROVIDER=ocr` (tesseract-only) or `=none` (skip the reader). |

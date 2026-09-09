@@ -12,7 +12,10 @@
     "optional_if_session_string_provided": [
       "phone"
     ],
-    "notes": "api_id/api_hash from https://my.telegram.org (API development tools) for a SPARE Telegram account, never the human's personal one. `phone` is that spare account's number, needed only for the phone-code handshake. If the human already has a GRAEA_SESSION_STRING from a previous login (see session_export below), phone/the phone-code step can be skipped entirely."
+    "notes": "api_id/api_hash from https://my.telegram.org (API development tools) for a SPARE Telegram account, never the human's personal one. `phone` is that spare account's number, needed only for the phone-code handshake. If the human already has a GRAEA_SESSION_STRING from a previous login (see session_export below), phone/the phone-code step can be skipped entirely.",
+    "optional": [
+      "2fa_password (GRAEA_2FA_PASSWORD) if the spare account has two-step verification"
+    ]
   },
   "install_cmd": "git clone https://github.com/estejosh/graea && cd graea && bash install.sh",
   "install_cmd_no_container": "git clone https://github.com/estejosh/graea && cd graea && bash install.sh --no-container",
@@ -107,7 +110,10 @@
       "success_line": "GRAEA_LOGIN_WEB: ok",
       "already_line": "GRAEA_LOGIN_WEB: already",
       "blank_qr_line_prefix": "GRAEA_LOGIN_WEB: warning \u2014 QR canvas is blank",
-      "on_blank_qr": "do not send the image; wait a few minutes and re-run login-web (Telegram rate-limited or refused the login token)"
+      "on_blank_qr": "do not send the image; wait a few minutes and re-run login-web (Telegram rate-limited or refused the login token)",
+      "two_factor_env": "GRAEA_2FA_PASSWORD",
+      "two_factor_note": "For accounts with two-step verification set GRAEA_2FA_PASSWORD before login-web; the password prompt after the QR scan is filled automatically. Missing/rejected -> line 'GRAEA_LOGIN_WEB: error 2FA password required', exit 1.",
+      "settle_note": "The web eye needs ~10-20s after launch before web_logged_in is trustworthy; status/web-probe wait up to GRAEA_WEB_LOGIN_SETTLE_S (20)."
     }
   },
   "session_export": {
@@ -226,7 +232,8 @@
     "vision pending": "vision.error says pending: you are the reader. Look at the returned screenshot image and call graea_submit_reading. Only switch GRAEA_VISION_PROVIDER to an engine if the driving LLM cannot see images.",
     "login prints GRAEA_LOGIN: error ...": "a Telegram-side rejection (bad phone format, wrong/expired code, missing 2FA password, bad api_id/api_hash, rate limit) was caught and printed as one line with a hint \u2014 never a traceback. Fix per the hint (e.g. correct GRAEA_PHONE, set GRAEA_2FA_PASSWORD, wait out a FloodWaitError) and re-run login.",
     "status --json hint mentions connect timed out": "the first MTProto connect can take longer than GRAEA_CONNECT_TIMEOUT_S (default 20s). Just re-run status; it isn't a credentials problem by itself.",
-    "blank qr": "login-web printed the blank-canvas warning: Telegram issued no login token. Wait and retry; keep headless mode; check the container can reach web.telegram.org over IPv4."
+    "blank qr": "login-web printed the blank-canvas warning: Telegram issued no login token. Wait and retry; keep headless mode; check the container can reach web.telegram.org over IPv4.",
+    "2fa": "login-web printed '2FA password required': set GRAEA_2FA_PASSWORD in .env and re-run."
   },
   "vision": {
     "default_provider": "caller",
