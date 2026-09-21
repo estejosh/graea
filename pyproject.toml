@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "Elastic-2.0" }
 dependencies = [
-  "telethon>=1.36",
+  "telethon>=1.36,<2",
   "playwright>=1.45",
   "duckdb>=1.0",
   "pydantic>=2.6,<3",
