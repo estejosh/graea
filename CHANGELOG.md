@@ -3,6 +3,14 @@
 All notable changes to Graea are recorded here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.1.6] — 2026-09-21
+
+- telethon 1.45 (new Telegram TL layer) renamed inline buttons to
+  `KeyboardInlineButton(text, type=InlineButtonType*)`; keyboards from real
+  bots came back untyped and CI failed. `serialize.py` now reads both
+  schemas; tests build buttons under whichever telethon is installed.
+- License: UFL-2.0, Operational Scope No-Third-Party-Hosting (tag UFL-H-1a).
+
 ## [0.1.5] — 2026-09-09
 
 Post-v0.1.4 verification run (rootless podman, headless, 2FA account).

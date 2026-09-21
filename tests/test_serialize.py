@@ -7,9 +7,39 @@ relies on.
 """
 from __future__ import annotations
 
+
 from telethon.tl import types as tt
 
 from graea.client.serialize import message_to_observed
+
+# Telegram's TL schema changed in telethon 1.45: buttons became
+# KeyboardInlineButton(text, type=InlineButtonType*). These helpers build a
+# button under whichever schema the installed telethon has, so the suite
+# exercises the real shape on both.
+NEW_SCHEMA = not hasattr(tt, "KeyboardButtonCallback")
+
+
+def cb_button(text, data):
+    if NEW_SCHEMA:
+        return tt.KeyboardInlineButton(text=text, type=tt.InlineButtonTypeCallback(data=data))
+    return tt.KeyboardButtonCallback(text=text, data=data)
+
+
+def url_button(text, url):
+    if NEW_SCHEMA:
+        return tt.KeyboardInlineButton(text=text, type=tt.InlineButtonTypeUrl(url=url))
+    return tt.KeyboardButtonUrl(text=text, url=url)
+
+
+def inline_row(buttons):
+    return tt.KeyboardInlineButtonRow(buttons=buttons) if NEW_SCHEMA else tt.KeyboardButtonRow(buttons=buttons)
+
+
+def reply_button(text):
+    if NEW_SCHEMA:
+        return tt.KeyboardButton(text=text, type=tt.ButtonTypeDefault())
+    return tt.KeyboardButton(text=text)
+
 
 BOT_ID = 999
 USER_ID = 111
@@ -57,12 +87,12 @@ def test_text_url_entity_carries_url():
 
 def test_inline_keyboard_rows_and_callback_decode():
     markup = tt.ReplyInlineMarkup(rows=[
-        tt.KeyboardButtonRow(buttons=[
-            tt.KeyboardButtonCallback(text="OK", data=b"ok"),
-            tt.KeyboardButtonUrl(text="Visit", url="https://example.com"),
+        inline_row([
+            cb_button("OK", b"ok"),
+            url_button("Visit", "https://example.com"),
         ]),
-        tt.KeyboardButtonRow(buttons=[
-            tt.KeyboardButtonCallback(text="Cancel", data=b"cancel"),
+        inline_row([
+            cb_button("Cancel", b"cancel"),
         ]),
     ])
     m = _msg(message="choose", reply_markup=markup)
@@ -93,8 +123,8 @@ def test_inline_keyboard_rows_and_callback_decode():
 
 def test_callback_data_decodes_invalid_utf8_with_replace():
     markup = tt.ReplyInlineMarkup(rows=[
-        tt.KeyboardButtonRow(buttons=[
-            tt.KeyboardButtonCallback(text="Bad", data=b"\xff\xfe\x00bad"),
+        inline_row([
+            cb_button("Bad", b"\xff\xfe\x00bad"),
         ]),
     ])
     m = _msg(message="x", reply_markup=markup)
@@ -105,7 +135,7 @@ def test_callback_data_decodes_invalid_utf8_with_replace():
 
 def test_reply_keyboard():
     markup = tt.ReplyKeyboardMarkup(
-        rows=[tt.KeyboardButtonRow(buttons=[tt.KeyboardButton(text="Menu")])],
+        rows=[tt.KeyboardButtonRow(buttons=[reply_button("Menu")])],
         resize=True,
         single_use=True,
     )

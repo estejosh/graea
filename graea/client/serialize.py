@@ -79,45 +79,45 @@ def _rendered_text(text: str, entities: Optional[list]) -> str:
 # keyboards
 # --------------------------------------------------------------------------
 
-_URL_BUTTON_TYPES = ("KeyboardButtonUrl", "KeyboardButtonUrlAuth")
-_CALLBACK_BUTTON_TYPES = ("KeyboardButtonCallback",)
-_SWITCH_INLINE_TYPES = ("KeyboardButtonSwitchInline", "KeyboardButtonSwitchInlineQueryCurrentChat")
-_WEB_APP_TYPES = ("KeyboardButtonWebView", "KeyboardButtonSimpleWebView")
-_REQUEST_CONTACT_TYPES = ("KeyboardButtonRequestPhone",)
-_REQUEST_LOCATION_TYPES = ("KeyboardButtonRequestGeoLocation",)
+
+
+_KIND_BY_SUFFIX = (  # matched against the class name of the button OR its `.type` (layer >= 1.45 schema)
+    ("Callback", "callback"), ("UrlAuth", "url"), ("Url", "url"), ("SwitchInline", "switch_inline"),
+    ("WebView", "web_app"), ("RequestPhone", "request_contact"), ("RequestGeoLocation", "request_location"),
+)
+
+
+def _button_typed(btn: Any) -> Any:
+    """Old schema: KeyboardButtonCallback(text, data). New schema (telethon>=1.45):
+    KeyboardInlineButton(text, type=InlineButtonTypeCallback(data)). Return the
+    object that carries the kind and payload."""
+    return getattr(btn, "type", None) or btn
 
 
 def _classify_button_kind(btn: Any, *, inline: bool) -> str:
-    name = type(btn).__name__
-    if name in _CALLBACK_BUTTON_TYPES:
-        return "callback"
-    if name in _URL_BUTTON_TYPES:
-        return "url"
-    if name in _SWITCH_INLINE_TYPES:
-        return "switch_inline"
-    if name in _WEB_APP_TYPES:
-        return "web_app"
-    if name in _REQUEST_CONTACT_TYPES:
-        return "request_contact"
-    if name in _REQUEST_LOCATION_TYPES:
-        return "request_location"
+    name = type(_button_typed(btn)).__name__
+    for suffix, kind in _KIND_BY_SUFFIX:
+        if name.endswith(suffix):
+            return kind
     if not inline:
         return "reply"
     return "other"
 
 
 def _button_data(btn: Any) -> Optional[str]:
-    data = getattr(btn, "data", None)
-    if data is not None:
-        if isinstance(data, (bytes, bytearray)):
-            return bytes(data).decode("utf-8", errors="replace")
-        return str(data)
-    url = getattr(btn, "url", None)
-    if url:
-        return url
-    query = getattr(btn, "query", None)
-    if query is not None:
-        return query
+    typed = _button_typed(btn)
+    for obj in (typed, btn):
+        data = getattr(obj, "data", None)
+        if data is not None:
+            if isinstance(data, (bytes, bytearray)):
+                return bytes(data).decode("utf-8", errors="replace")
+            return str(data)
+        url = getattr(obj, "url", None)
+        if url:
+            return url
+        query = getattr(obj, "query", None)
+        if query is not None:
+            return query
     return None
 
 
