@@ -1,94 +1,111 @@
-Elastic License 2.0 (ELv2)
+The Usufruct License (UFL) — Version 2.0
+Canonical text, whitepaper, and FAQ: https://github.com/estejosh/UFL-Usufruct-License
 
 Copyright (c) 2026 Joshua D. Hale
 
-## Acceptance
+Operational Scope: No-Third-Party-Hosting
 
-By using the software, you agree to all of the terms and conditions below.
+## 1. Grant of Use
 
-## Copyright License
+Subject to the terms below and the Operational Scope declared above,
+the Licensor grants anyone the free, perpetual, worldwide right to use
+the Software — in source or compiled form, at any scale — without
+payment or a separate license beyond what Section 1A requires. This
+includes running the Software, deploying it, integrating with it
+through its published interfaces, and operating a product or service
+built on top of it, as scoped by Section 1A.
 
-The licensor grants you a non-exclusive, royalty-free, worldwide,
-non-sublicensable, non-transferable license to use, copy, distribute, make
-available, and prepare derivative works of the software, in each case subject
-to the limitations and conditions below.
+## 1A. Operational Scope
 
-## Limitations
+The Operational Scope declared above states the only limit, if any, on
+Section 1's grant. Exactly one scope applies to this Software:
 
-You may not provide the software to third parties as a hosted or managed
-service, where the service provides users with access to any substantial set
-of the features or functionality of the software.
+No-Third-Party-Hosting — Section 1's grant excludes providing the
+Software to third parties as a hosted or managed service that gives
+those third parties access to substantially all of the Software's
+features or functionality. All other uses described in Section 1 are
+unconditional.
 
-You may not move, change, disable, or circumvent the license key
-functionality in the software, and you may not remove or obscure any
-functionality in the software that is protected by the license key.
+## 2. Reserved Rights
 
-You may not alter, remove, or obscure any licensing, copyright, or other
-notices of the licensor in the software. Any use of the licensor's trademarks
-is subject to applicable law.
+The following rights are reserved to the Licensor and are NOT granted by
+Section 1. They require a separate written license from the Licensor,
+except as Section 2A permits:
 
-## Patents
+  (a) Distributing the Software, or any modified version, fork, or
+      substantially similar reimplementation of it, to any third party,
+      in source or compiled form.
+  (b) Incorporating the Software's source code into another product or
+      service that is distributed, sold, or otherwise made available to
+      third parties.
+  (c) Using the Licensor's name, marks, or claims of compatibility
+      ("Graea-compatible," "built on Graea," etc.) in
+      connection with a distributed derivative.
 
-The licensor grants you a license, under any patent claims the licensor can
-license, or becomes able to license, to make, have made, use, sell, offer for
-sale, import and have imported the software, in each case subject to the
-limitations and conditions in this license. This license does not cover any
-patent claims that you cause to be infringed by modifications or additions to
-the software. If you or your company make any written claim that the software
-infringes or contributes to infringement of any patent, your patent license
-for the software granted under these terms ends immediately. If your company
-makes such a claim, your patent license ends immediately for work on behalf
-of your company.
+## 2A. Forks of Decentralized or Network Software
 
-## Notices
+If the Software is designed to run as a node, client, or peer in a
+decentralized network, blockchain, or similar peer-to-peer protocol,
+Section 2(a) does not require a separate license for distributing a
+modified version, fork, or independent reimplementation of it —
+including to operate a competing network — provided the distributed
+work:
 
-You must ensure that anyone who gets a copy of any part of the software from
-you also gets a copy of these terms.
+  (i) prominently and accurately credits Graea as the origin
+      of the Software or protocol, in its README, whitepaper, or
+      equivalent primary documentation; and
+  (ii) keeps the canonical-source notice required by Section 7 intact.
 
-If you modify the software, you must include in any modified copies of the
-software prominent notices stating that you have modified the software.
+Distributing a fork that removes, obscures, or falsifies this
+attribution is not permitted under this exception and still requires a
+separate license under Section 2(a). This section does not affect
+Sections 2(b) or 2(c): incorporating the Software into another
+distributed product, and using the Licensor's name or marks to claim
+compatibility, still require a separate license regardless of
+attribution.
 
-## No Other Rights
+## 3. Why "Usufruct"
 
-These terms do not imply any licenses other than those expressly granted in
-these terms.
+In civil law, a usufruct is the right to use property belonging to
+another and enjoy its benefits, without the right to alter its substance
+or transfer ownership to someone else. This license grants exactly that:
+full use, no transfer.
 
-## Termination
+## 4. Contributions
 
-If you use the software in violation of these terms, such use is not licensed,
-and your licenses will automatically terminate. If the licensor provides you
-with a notice of your violation, and you cease all violation of this license
-no later than 30 days after you receive that notice, your licenses will be
-reinstated retroactively. However, if you violate these terms after such
-reinstatement, any additional violation of these terms will cause your
-licenses to terminate automatically and permanently.
+Contributions submitted to a Software repository under this license are
+accepted under these same terms and are granted back to the Licensor to
+the extent necessary to keep this license enforceable across the
+combined work.
 
-## No Liability
+## 5. No Warranty
 
-*As far as the law allows, the software comes as is, without any warranty or
-condition, and the licensor will not be liable to you for any damages arising
-out of these terms or the use or nature of the software, under any kind of
-legal claim.*
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT.
+IN NO EVENT SHALL THE LICENSOR BE LIABLE FOR ANY CLAIM, DAMAGES, OR
+OTHER LIABILITY ARISING FROM THE SOFTWARE OR THE USE OR OTHER DEALINGS
+IN THE SOFTWARE.
 
-## Definitions
+## 6. Note on Classification
 
-The **licensor** is the entity offering these terms, and the **software** is
-the software the licensor makes available under these terms, including any
-portion of it.
+This is a source-available license, not an OSI-approved open source
+license. The Open Source Definition requires unrestricted redistribution
+rights, which Section 2 intentionally withholds regardless of
+Operational Scope. Some Operational Scopes under Section 1A also
+withhold uses the Open Source Definition requires to be unrestricted.
+The source is public; which uses are free depends on the Operational
+Scope declared above.
 
-**you** refers to the individual or entity agreeing to these terms.
+## 7. Notice
 
-**your company** is any legal entity, sole proprietorship, or other kind of
-organization that you work for, plus all organizations that have control
-over, are under the control of, or are under common control with that
-organization. **control** means ownership of substantially all the assets of
-an entity, or the power to direct its management and policies by vote,
-contract, or otherwise. Control can be direct or indirect.
+The canonical-source line at the top of this license text (or an
+equivalent pointer to https://github.com/estejosh/UFL-Usufruct-License)
+must be kept intact when this license text is copied into another
+project. This is a notice requirement on the license text itself, not
+an additional condition on using the Software beyond Section 1A.
 
-**your licenses** are all the licenses granted to you for the software under
-these terms.
-
-**use** means anything you do with the software requiring one of your
-licenses.
-
-**trademark** means trademarks, service marks, and similar rights.
+---
+SPDX identifier: UFL is not on the official SPDX license list. Per SPDX
+convention for licenses outside that list, use `LicenseRef-UFL-2.0-H` —
+not a bare `UFL-2.0-H`, which would misrepresent it as SPDX-registered.
