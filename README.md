@@ -132,12 +132,12 @@ stack, and `docs/LLM-GUIDE.md` for how an LLM should drive the MCP tools.
 
 ## License
 
-Graea is source-available under the [Usufruct License (UFL) v2.1](LICENSE),
+Graea is source-available under the [Usufruct License (UFL) v2.2](LICENSE),
 Operational Scope: **No-Third-Party-Hosting** (tag `UFL-H-1a`). You can use
 it, modify it, and ship it inside your own products and pipelines; you can't
 offer Graea itself to third parties as a hosted or managed service.
 Copyright (c) 2026 Joshua D. Hale.
 
-UFL is not on the SPDX license list; cite it as `LicenseRef-UFL-2.1-H`. See
+UFL is not on the SPDX license list; cite it as `LicenseRef-UFL-2.2-H`. See
 the canonical license text and generator at
 [estejosh/UFL-Usufruct-License](https://github.com/estejosh/UFL-Usufruct-License).
