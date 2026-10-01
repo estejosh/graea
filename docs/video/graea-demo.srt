@@ -1,0 +1,140 @@
+1
+00:00:00,460 --> 00:00:03,330
+your ai built a telegram bot.
+
+2
+00:00:03,500 --> 00:00:04,710
+it says it works.
+
+3
+00:00:05,440 --> 00:00:06,750
+you open telegram,
+
+4
+00:00:06,880 --> 00:00:08,110
+you tap the button,
+
+5
+00:00:08,300 --> 00:00:09,570
+nothing happens.
+
+6
+00:00:09,960 --> 00:00:11,460
+so you screenshot it,
+
+7
+00:00:11,500 --> 00:00:13,510
+paste it back, and explain.
+
+8
+00:00:14,238 --> 00:00:17,028
+graea gives your ai its own eyes.
+
+9
+00:00:17,338 --> 00:00:19,058
+it logs in as a test user
+
+10
+00:00:19,098 --> 00:00:20,948
+and messages your bot.
+
+11
+00:00:21,158 --> 00:00:22,798
+it taps the inline button
+
+12
+00:00:22,838 --> 00:00:23,798
+like a person would.
+
+13
+00:00:23,838 --> 00:00:25,438
+it screenshots the chat
+
+14
+00:00:25,478 --> 00:00:27,638
+as telegram renders it.
+
+15
+00:00:27,678 --> 00:00:29,198
+a vision model reads it,
+
+16
+00:00:29,238 --> 00:00:30,828
+you choose which one.
+
+17
+00:00:31,218 --> 00:00:33,738
+expected an order summary,
+
+18
+00:00:33,778 --> 00:00:34,978
+saw nothing,
+
+19
+00:00:35,018 --> 00:00:36,908
+the callback never answered.
+
+20
+00:00:37,706 --> 00:00:40,236
+markdown, truncated buttons,
+
+21
+00:00:40,406 --> 00:00:41,746
+missing captions.
+
+22
+00:00:41,786 --> 00:00:43,216
+it catches those.
+
+23
+00:00:43,666 --> 00:00:47,756
+every step goes into duckdb log.
+
+24
+00:00:48,766 --> 00:00:50,836
+run one, three failures.
+
+25
+00:00:51,166 --> 00:00:54,056
+your ai plugs in over mcp,
+
+26
+00:00:54,294 --> 00:00:55,574
+the ai reads what broke
+
+27
+00:00:55,614 --> 00:00:57,224
+and patches the bot.
+
+28
+00:00:57,894 --> 00:00:59,174
+graea runs it again.
+
+29
+00:00:59,214 --> 00:01:00,984
+run two, one failure.
+
+30
+00:01:01,694 --> 00:01:03,494
+run three, all passed.
+
+31
+00:01:03,534 --> 00:01:05,124
+the diff shows the progress.
+
+32
+00:01:05,334 --> 00:01:07,764
+no human relaying screenshots.
+
+33
+00:01:08,674 --> 00:01:10,744
+graea, source available.
+
+34
+00:01:11,254 --> 00:01:12,644
+usufruct licensing.
+
+35
+00:01:12,934 --> 00:01:14,764
+ufl all the way.
+

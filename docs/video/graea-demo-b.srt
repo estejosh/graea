@@ -1,0 +1,56 @@
+1
+00:00:00,630 --> 00:00:03,000
+your ai says the bot works.
+
+2
+00:00:03,050 --> 00:00:04,940
+the button does nothing.
+
+3
+00:00:05,370 --> 00:00:06,870
+graea taps it, screenshots it,
+
+4
+00:00:06,910 --> 00:00:08,090
+and reads it.
+
+5
+00:00:08,130 --> 00:00:10,560
+it logs every step in duckdb.
+
+6
+00:00:10,790 --> 00:00:13,930
+it tells your ai exactly what broke and where.
+
+7
+00:00:13,970 --> 00:00:15,410
+the ai fixes it.
+
+8
+00:00:15,450 --> 00:00:16,780
+graea checks again.
+
+9
+00:00:16,970 --> 00:00:18,090
+run one, three failures.
+
+10
+00:00:18,130 --> 00:00:19,540
+run three, all pass.
+
+11
+00:00:20,050 --> 00:00:22,160
+no human relaying screenshots.
+
+12
+00:00:23,038 --> 00:00:25,208
+graea, source available.
+
+13
+00:00:25,458 --> 00:00:26,828
+usufruct licensing.
+
+14
+00:00:26,958 --> 00:00:28,788
+ufl all the way.
+

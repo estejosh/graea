@@ -9,3 +9,6 @@ __pycache__/
 dist/
 build/
 *.egg-info/
+docs/video/out/
+docs/video/fonts/*.woff2
+docs/video/fonts/fonts.css
