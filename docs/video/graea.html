@@ -1,0 +1,390 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Graea preview video storyboard</title>
+<!--
+  Deterministic storyboard. Every frame is a pure function of t: window.seek(t).
+  No CSS transitions/animations, no requestAnimationFrame.
+  Params: ?cut=A|B &w=1920 &h=1080 &caps=0|1 &tc=0|1
+  Scene times come from cues.js (built by build_audio.py from the recorded audio).
+  All chat content is synthetic: fictional user, fictional @demo_pizza_bot, generic messenger look.
+-->
+<link rel="stylesheet" href="fonts/fonts.css">
+<script src="cues.js"></script>
+<style>
+:root{--bg:#0b1226;--p1:#121b36;--p2:#18244a;--line:#27345f;--tx:#e8ecf8;--mu:#8e9bc2;
+  --ac:#5b8cff;--red:#ff6b6b;--amb:#ffc15a;--grn:#4ade80}
+*{box-sizing:border-box;margin:0;padding:0;transition:none!important;animation:none!important}
+html,body{background:var(--bg);overflow:hidden;font-family:Inter,sans-serif;color:var(--tx)}
+#stage{position:relative;overflow:hidden;background:var(--bg)}
+#box{position:absolute;left:0;top:0;width:1200px;height:900px;transform-origin:0 0}
+.abs{position:absolute}
+.layer{position:absolute;left:0;top:0;width:1200px;height:900px;opacity:0;pointer-events:none}
+.panel{position:absolute;background:var(--p1);border:1.5px solid var(--line);border-radius:18px;overflow:hidden}
+.ph{height:52px;padding:0 18px;display:flex;align-items:center;gap:10px;font-weight:600;font-size:21px;
+  background:var(--p2);border-bottom:1.5px solid var(--line);color:var(--tx)}
+.ph small{font-weight:400;color:var(--mu);font-size:16px}
+.mono{font-family:JBM,monospace}
+.pill{display:inline-flex;align-items:center;padding:4px 12px;border-radius:99px;font-size:17px;font-weight:600;
+  border:1.5px solid var(--line);color:var(--mu);background:transparent}
+.dot{width:10px;height:10px;border-radius:50%;background:var(--mu);display:inline-block}
+/* chat window */
+.chat{position:absolute;width:520px;height:600px;background:#0f1730;border:1.5px solid var(--line);border-radius:22px;overflow:hidden}
+.chead{height:72px;display:flex;align-items:center;gap:14px;padding:0 20px;background:var(--p2);border-bottom:1.5px solid var(--line)}
+.av{width:42px;height:42px;border-radius:50%;background:linear-gradient(135deg,#ff9f5a,#ff5a7a);display:flex;align-items:center;justify-content:center;font-weight:700}
+.chead b{display:block;font-size:21px}.chead span{font-size:16px;color:var(--mu)}
+.badge{margin-left:auto;font-size:15px;font-weight:600;color:var(--ac);border:1.5px solid var(--ac);border-radius:99px;padding:4px 10px;opacity:0}
+.bub{position:absolute;padding:12px 16px;border-radius:16px;font-size:21px;line-height:1.35;opacity:0}
+.bub.user{right:20px;background:var(--ac);color:#fff;border-bottom-right-radius:4px}
+.bub.bot{left:20px;width:400px;background:#1d2a55;border-bottom-left-radius:4px}
+.kbd{position:absolute;left:20px;top:356px;display:flex;gap:10px;opacity:0}
+.kb{width:150px;height:46px;border-radius:12px;background:#243466;border:1.5px solid #34467f;display:flex;align-items:center;justify-content:center;
+  font-weight:600;font-size:20px;gap:10px;position:relative}
+.kb.on{background:#3b56a6}
+.spin{width:18px;height:18px;border-radius:50%;border:3px solid rgba(255,255,255,.25);border-top-color:#fff;opacity:0}
+.cin{position:absolute;left:0;right:0;bottom:0;height:60px;border-top:1.5px solid var(--line);background:var(--p2);color:var(--mu);
+  padding:18px 20px;font-size:18px}
+.ring{position:absolute;border:3px solid var(--red);border-radius:16px;opacity:0}
+.note{position:absolute;font-size:18px;color:var(--mu);opacity:0}
+/* misc */
+.line{position:absolute;opacity:0;font-size:22px}
+.kv{font-family:JBM,monospace;font-size:22px}
+.card{position:absolute;background:var(--p2);border:1.5px solid var(--line);border-radius:14px;padding:14px 18px;opacity:0}
+.chip{display:inline-block;padding:7px 16px;border-radius:99px;border:1.5px solid var(--line);font-size:20px;font-weight:600;color:var(--mu)}
+.sev{font-size:13px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}
+.code{font-family:JBM,monospace;font-size:20px;line-height:1.55;white-space:pre}
+.cap{position:absolute;left:0;right:0;text-align:center;font-weight:600;color:#fff;opacity:0}
+.cap span{display:inline-block;background:rgba(5,9,22,.78);padding:.18em .55em;border-radius:.4em;line-height:1.3}
+#tc{position:absolute;left:14px;bottom:10px;font:500 20px JBM,monospace;color:#ffd166;background:rgba(0,0,0,.6);padding:4px 10px;border-radius:6px;display:none}
+</style>
+</head>
+<body>
+<div id="stage"><div id="box"></div><div class="cap" id="cap"><span id="capt"></span></div><div id="tc"></div></div>
+<script>
+/* ---------- params, geometry ---------- */
+const Q=new URLSearchParams(location.search);
+const CUT=(Q.get('cut')||'A').toUpperCase(), W=+Q.get('w')||1920, H=+Q.get('h')||1080;
+const CAPS=Q.get('caps')==='1', TC=Q.get('tc')==='1', PORTRAIT=H>W;
+const C=window.CUES[CUT], K=C.marks;
+window.DUR=C.dur;
+const stage=document.getElementById('stage'), box=document.getElementById('box');
+stage.style.width=W+'px'; stage.style.height=H+'px';
+const SC=Math.min(W/1200,H/900);
+const OX=(W-1200*SC)/2, OY=PORTRAIT?(H-900*SC)/2-110:(H-900*SC)/2;
+box.style.transform=`translate(${OX}px,${OY}px) scale(${SC})`;
+const capEl=document.getElementById('cap'), capT=document.getElementById('capt');
+if(PORTRAIT){capEl.style.top=(OY+900*SC+60)+'px';capEl.style.fontSize='60px';capEl.style.padding='0 40px'}
+else{capEl.style.bottom='34px';capEl.style.fontSize='40px'}
+if(TC)document.getElementById('tc').style.display='block';
+
+/* ---------- helpers (all pure in t) ---------- */
+const clamp=(x,a=0,b=1)=>Math.min(b,Math.max(a,x));
+const ease=x=>x<.5?4*x*x*x:1-Math.pow(-2*x+2,3)/2;
+const ramp=(t,a,b)=>ease(clamp((t-a)/(b-a)));
+const lin=(t,a,b)=>clamp((t-a)/(b-a));
+const win=(t,a,b,f=.22)=>ramp(t,a,a+f)*(1-ramp(t,b-f,b));
+const typed=(s,p)=>s.slice(0,Math.floor(clamp(p)*s.length));
+const $=id=>document.getElementById(id);
+const op=(id,v)=>{const e=$(id);e.style.opacity=v;e.style.visibility=v<=0.001?'hidden':'visible'};
+const tf=(id,x,y,s=1,r=0)=>{$(id).style.transform=`translate(${x}px,${y}px) scale(${s}) rotate(${r}deg)`};
+const path=(t,keys)=>{ // keys [[t,x,y],...] eased interpolation
+  if(t<=keys[0][0])return[keys[0][1],keys[0][2]];
+  for(let i=1;i<keys.length;i++){if(t<=keys[i][0]){const a=keys[i-1],b=keys[i],u=ease(lin(t,a[0],b[0]));return[a[1]+(b[1]-a[1])*u,a[2]+(b[2]-a[2])*u]}}
+  const l=keys[keys.length-1];return[l[1],l[2]];
+};
+const EYE=(id,sz,gx=0,gy=0)=>`<svg id="${id}" width="${sz}" height="${sz*0.625}" viewBox="0 0 64 40" style="overflow:visible">
+ <path d="M3 20C15 4 49 4 61 20C49 36 15 36 3 20Z" fill="none" stroke="#e8ecf8" stroke-width="3" stroke-linejoin="round"/>
+ <circle class="iris" cx="${32+gx}" cy="${20+gy}" r="9.5" fill="#5b8cff"/><circle class="pup" cx="${32+gx}" cy="${20+gy}" r="4" fill="#0b1226"/></svg>`;
+const setEye=(id,gx,gy,blink=0)=>{const s=$(id);s.querySelector('.iris').setAttribute('cx',32+gx);s.querySelector('.iris').setAttribute('cy',20+gy);
+  s.querySelector('.pup').setAttribute('cx',32+gx);s.querySelector('.pup').setAttribute('cy',20+gy);
+  s.style.transform=`scaleY(${1-0.9*blink})`;s.style.transformOrigin='50% 50%'};
+
+/* ---------- build DOM ---------- */
+function chatHTML(p,x,y){return `<div class="chat" id="${p}" style="left:${x}px;top:${y}px">
+ <div class="chead"><div class="av">P</div><div><b>Demo Pizza Bot</b><span>@demo_pizza_bot</span></div><div class="badge" id="${p}-badge">test user</div></div>
+ <div class="bub user" id="${p}-u" style="top:150px">/start</div>
+ <div class="bub bot" id="${p}-b" style="top:212px">Welcome to Demo Pizza.<br>Tap a button to order.</div>
+ <div class="kbd" id="${p}-k"><div class="kb" id="${p}-o">Order<div class="spin" id="${p}-s"></div></div><div class="kb">Status</div><div class="kb">Help</div></div>
+ <div class="ring" id="${p}-r" style="left:16px;top:350px;width:158px;height:54px"></div>
+ <div class="note" id="${p}-n" style="left:22px;top:418px">no response</div>
+ <div class="cin">Message</div></div>`}
+const humanSVG=`<svg width="64" height="64" viewBox="0 0 64 64"><circle cx="32" cy="22" r="11" fill="#e8ecf8"/><path d="M10 58c2-16 12-24 22-24s20 8 22 24z" fill="#e8ecf8"/></svg>`;
+const ptr=(c)=>`<svg width="34" height="34" viewBox="0 0 24 24"><path d="M4 2l15 9-6.5 1.6L9.5 19z" fill="${c}" stroke="#0b1226" stroke-width="1.4" stroke-linejoin="round"/></svg>`;
+const MCP=['graea_start_run','graea_end_run','graea_send','graea_command','graea_press_button','graea_send_file','graea_wait','graea_look',
+ 'graea_assert','graea_submit_reading','graea_run_scenario','graea_diff','graea_history','graea_sql','graea_status','graea_update_check'];
+
+box.innerHTML=`
+<div class="layer" id="hdr" style="opacity:1">
+  <div class="abs" style="left:60px;top:26px;display:flex;align-items:center;gap:12px">${EYE('hl',46)}<b style="font-size:26px;letter-spacing:.01em">graea</b></div>
+  <div class="abs" id="ill" style="right:60px;top:30px;opacity:0"><span class="pill" style="color:var(--amb);border-color:var(--amb)">illustrative run</span></div>
+</div>
+<div class="layer" id="rail">${['act','capture','read','log','fix','re-check'].map((n,i)=>
+  `<div class="abs pill" id="rp${i}" style="left:${60+i*182}px;top:92px;width:168px;justify-content:center;font-size:19px">${n}</div>`).join('')}</div>
+
+<div class="layer" id="s1">
+  ${chatHTML('c1',60,165)}
+  <div class="panel" style="left:640px;top:165px;width:500px;height:600px">
+    <div class="ph"><span class="dot" style="background:var(--grn)"></span>your ai <small>coding assistant</small></div>
+    <div class="abs" style="left:20px;top:66px;width:460px;height:80px"><div class="card" id="a1m" style="opacity:1;position:relative;font-size:23px;padding:14px 18px"><span id="a1t"></span></div></div>
+    <div class="abs mono" id="a1f" style="left:24px;top:162px;opacity:0;font-size:19px;color:var(--mu)">bot.py &nbsp;<span style="color:var(--grn)">saved</span></div>
+    <div class="abs" id="a1y" style="right:20px;top:300px;width:300px;opacity:0"><div class="card" style="opacity:1;position:relative;background:var(--ac);border-color:var(--ac);font-size:23px"><span id="a1h"></span></div></div>
+    <div class="abs" id="a1you" style="left:24px;bottom:22px;opacity:0"><span class="pill" style="color:var(--amb);border-color:var(--amb)">you: the eyes, relaying screenshots</span></div>
+  </div>
+  <div class="abs" id="thumb" style="left:0;top:0;width:150px;height:170px;border-radius:10px;background:#0f1730;border:2px solid var(--ac);opacity:0;overflow:hidden">
+    <div class="abs" style="left:10px;top:12px;width:70px;height:18px;border-radius:8px;background:#1d2a55"></div>
+    <div class="abs" style="left:10px;top:40px;width:130px;height:34px;border-radius:8px;background:#1d2a55"></div>
+    <div class="abs" style="left:10px;top:84px;width:58px;height:16px;border-radius:6px;background:#34467f"></div></div>
+</div>
+
+<div class="layer" id="ttl"><div class="abs" style="left:0;width:1200px;top:300px;text-align:center">
+  <div style="display:inline-block" id="ttlEye">${EYE('te',200)}</div>
+  <div style="font-size:92px;font-weight:700;letter-spacing:.01em;margin-top:18px">graea</div>
+  <div id="ttlSub" style="font-size:34px;color:var(--mu);margin-top:6px;opacity:0">your ai's own eyes</div></div></div>
+
+<div class="layer" id="s3">
+  ${chatHTML('c3',60,165)}
+  <div class="abs" id="flash" style="left:60px;top:165px;width:520px;height:600px;background:#fff;opacity:0;border-radius:22px"></div>
+  <div class="abs" id="brk" style="left:44px;top:149px;width:552px;height:632px;border:3px dashed var(--ac);border-radius:26px;opacity:0"></div>
+  <div class="panel" id="logp" style="left:640px;top:165px;width:500px;height:260px"><div class="ph"><span class="dot" style="background:var(--ac)"></span>graea <small>test user session</small></div>
+    <div class="line kv" id="lg0" style="left:20px;top:64px">connected as test user</div>
+    <div class="line kv" id="lg1" style="left:20px;top:104px">send_command <span style="color:var(--ac)">/start</span></div>
+    <div class="line kv" id="lg2" style="left:20px;top:144px">press_button <span style="color:var(--ac)">Order</span></div>
+    <div class="line kv" id="lg3" style="left:20px;top:184px;color:var(--mu)">waiting for reply ...</div></div>
+  <div class="panel" id="shp" style="left:640px;top:165px;width:500px;height:260px"><div class="ph"><span class="dot" style="background:var(--ac)"></span>screenshot <small>chat as rendered</small></div>
+    <div class="abs" style="left:24px;top:62px;width:200px;height:176px;overflow:hidden;border-radius:12px;border:1.5px solid var(--line)"><div style="transform:scale(.42);transform-origin:0 0;width:520px;height:600px;position:relative;top:-110px">${chatHTML('cm',0,0).replace('class="chat"','class="chat" style="border:none"')}</div></div>
+    <div class="abs" style="left:250px;top:76px;width:230px;font-size:21px;color:var(--mu);line-height:1.5">saved with every step<br>no human in the loop</div></div>
+  <div class="panel" id="rdp" style="left:640px;top:445px;width:500px;height:320px"><div class="ph"><span class="dot" style="background:var(--amb)"></span>reader <small>vision model</small></div>
+    <div id="prov">${['any OpenAI-compatible endpoint','Anthropic','OCR fallback','your own AI reads it'].map((n,i)=>
+      `<div class="abs chip" id="pv${i}" style="left:24px;top:${66+i*58}px">${n}</div>`).join('')}</div>
+    <div class="line" id="rd0" style="left:24px;top:70px;font-size:25px"><span style="color:var(--mu)">expected</span> &nbsp;order summary</div>
+    <div class="line" id="rd1" style="left:24px;top:126px;font-size:25px"><span style="color:var(--mu)">saw</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>nothing</b></div>
+    <div class="line" id="rd2" style="left:24px;top:182px;font-size:25px;color:var(--red)">button callback unanswered</div>
+    <div class="abs" id="stamp" style="right:26px;bottom:24px;opacity:0"><span class="pill" style="color:var(--red);border-color:var(--red);font-size:24px;padding:6px 20px">FAIL</span></div></div>
+</div>
+
+<div class="layer" id="gal">
+  ${[['raw_markdown','high','asterisks shown as text'],['truncated_button','medium','label cut off'],['missing_caption','medium','photo has no caption']].map((r,i)=>`
+  <div class="abs" id="gr${i}" style="left:100px;top:${190+i*184}px;width:1000px;height:160px;opacity:0">
+    <div class="panel" style="left:0;top:0;width:520px;height:160px;background:#0f1730">
+      ${i==0?`<div class="bub bot" style="opacity:1;left:20px;top:44px;width:430px;font-family:JBM,monospace;font-size:23px">*Welcome* to _Demo Pizza_</div>`:''}
+      ${i==1?`<div class="kb" style="position:absolute;left:20px;top:56px;width:300px;justify-content:flex-start;padding:0 14px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;display:block;line-height:46px">Place my order for two large pi...</div>`:''}
+      ${i==2?`<div class="abs" style="left:20px;top:24px;width:150px;height:112px;border-radius:12px;background:linear-gradient(135deg,#2a3a73,#3b4f94)"></div><div class="abs mono" style="left:190px;top:66px;font-size:16px;color:var(--mu)">[photo]</div>`:''}
+    </div>
+    <div class="abs" style="left:540px;top:56px;font-size:30px;color:var(--mu)">&rarr;</div>
+    <div class="panel" style="left:590px;top:20px;width:410px;height:120px"><div class="abs" style="left:20px;top:18px"><span class="sev" style="font-size:15px;color:${i==0?'var(--red)':'var(--amb)'}">${r[1]}</span></div>
+      <div class="abs mono" style="left:20px;top:44px;font-size:26px">${r[0]}</div><div class="abs" style="left:20px;top:84px;color:var(--mu);font-size:21px">${r[2]}</div>
+      <div class="abs" id="gf${i}" style="right:16px;top:16px;opacity:0"><span class="pill" style="color:var(--grn);border-color:var(--grn)">flagged</span></div></div>
+  </div>`).join('')}
+</div>
+
+<div class="layer" id="db">
+  <div class="panel" style="left:100px;top:190px;width:600px;height:540px"><div class="ph"><span class="dot" style="background:var(--ac)"></span>duckdb <small>every step, stored</small></div>
+    <div class="abs mono" style="left:20px;top:62px;font-size:17px;color:var(--mu)">run &nbsp;step &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;assertion &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;result</div>
+    ${[['start','markdown_rendered'],['press_order','message_edited'],['press_order','vision_no_issues']].map((r,i)=>
+      `<div class="abs mono" id="st${i}" style="left:20px;top:${100+i*46}px;font-size:19px;opacity:0;width:570px">1 &nbsp;&nbsp;${r[0].padEnd(12,' ').replace(/ /g,'&nbsp;')}${r[1].padEnd(19,' ').replace(/ /g,'&nbsp;')}<span style="color:var(--red)">fail</span></div>`).join('')}
+    <div class="abs mono" style="left:20px;top:250px;font-size:17px;color:var(--mu)">runs</div>
+    ${[['run 1','3 failures','var(--red)'],['run 2','1 failure','var(--amb)'],['run 3','all pass','var(--grn)']].map((r,i)=>
+      `<div class="abs mono" id="rn${i}" style="left:20px;top:${284+i*54}px;font-size:27px;opacity:0;width:560px"><span style="display:inline-block;width:120px">${r[0]}</span><span style="color:${r[2]}">${r[1]}</span></div>`).join('')}
+  </div>
+  <div class="panel" style="left:730px;top:190px;width:370px;height:540px"><div class="ph">progress <small>failures per run</small></div>
+    <div class="abs" style="left:30px;top:410px;width:310px;height:2px;background:var(--line)"></div>
+    ${[3,1,0].map((v,i)=>`<div class="abs" id="bar${i}" style="left:${48+i*100}px;bottom:${540-410}px;width:70px;height:0;background:${['var(--red)','var(--amb)','var(--grn)'][i]};border-radius:8px 8px 0 0"></div>
+      <div class="abs mono" id="bl${i}" style="left:${48+i*100}px;top:422px;width:70px;text-align:center;font-size:20px;color:var(--mu);opacity:0">run ${i+1}</div>
+      <div class="abs mono" id="bv${i}" style="left:${48+i*100}px;top:300px;width:70px;text-align:center;font-size:30px;font-weight:500;opacity:0">${v}</div>`).join('')}
+    <div class="abs" id="dff" style="left:24px;top:462px;width:322px;opacity:0"><span class="mono" style="font-size:21px"><span style="color:var(--grn)">fixed 3</span> &nbsp;&middot;&nbsp; regressed 0</span></div>
+  </div>
+</div>
+
+<div class="layer" id="mcp">
+  <div class="panel" style="left:100px;top:190px;width:470px;height:540px"><div class="ph"><span class="dot" style="background:var(--ac)"></span><span id="mcph">graea-mcp</span> <small id="mcpn">tools</small></div>
+    ${MCP.map((n,i)=>`<div class="abs mono" id="mt${i}" style="left:22px;top:${60+i*29}px;font-size:19px;opacity:0">${n}</div>`).join('')}
+    <div class="abs code" id="mj" style="left:22px;top:70px;font-size:18px;opacity:0">{
+  "step": "press_order",
+  "timed_out": true,
+  "assertions": [
+    {"kind": "message_edited",
+     "passed": false}
+  ],
+  "vision": {
+    "issues": ["callback unanswered"]
+  }
+}</div></div>
+  <div class="panel" style="left:600px;top:190px;width:500px;height:540px"><div class="ph"><span class="dot" style="background:var(--grn)"></span>your ai <small>reads the result, patches the bot</small></div>
+    <div class="line" id="mr" style="left:22px;top:66px;font-size:22px;color:var(--mu)">press_order &middot; message_edited <span style="color:var(--red)">failed</span><br>button callback unanswered</div>
+    <div class="abs code" id="mdf" style="left:22px;top:170px;opacity:0"><span style="color:var(--mu)">bot.py</span>
+<span style="color:var(--mu)"> async def answer_order(query, bugs):</span>
+<span id="rm1" style="color:var(--red)">-    if "dead_button" in bugs:</span>
+<span id="rm2" style="color:var(--red)">-        return</span>
+<span style="color:var(--grn)"> </span>    await query.answer()</div></div>
+</div>
+
+<div class="layer" id="loop">
+  <div class="abs" style="left:150px;top:330px"><div class="panel" style="position:relative;width:260px;height:120px;display:flex;align-items:center;justify-content:center;font-size:30px;font-weight:600">your ai</div></div>
+  <div class="abs" style="left:470px;top:330px"><div class="panel" style="position:relative;width:260px;height:120px;border-color:var(--ac);display:flex;align-items:center;justify-content:center;gap:14px;font-size:30px;font-weight:600">${EYE('le',54)} graea</div></div>
+  <div class="abs" style="left:790px;top:330px"><div class="panel" style="position:relative;width:260px;height:120px;display:flex;align-items:center;justify-content:center;font-size:30px;font-weight:600">your bot</div></div>
+  <div class="abs" style="left:412px;top:372px;font-size:34px;color:var(--ac)">&harr;</div><div class="abs" style="left:732px;top:372px;font-size:34px;color:var(--ac)">&harr;</div>
+  <div class="abs" id="hum" style="left:530px;top:560px;text-align:center;width:140px"><div style="opacity:.9">${humanSVG}</div>
+    <div class="pill" style="margin-top:6px;color:var(--mu)">you</div>
+    <svg id="xx" class="abs" width="140" height="130" viewBox="0 0 140 130" style="left:0;top:-6px;opacity:0"><path d="M10 10L130 120M130 10L10 120" stroke="#ff6b6b" stroke-width="7" stroke-linecap="round"/></svg></div>
+  <div class="abs" id="lpt" style="left:0;width:1200px;top:720px;text-align:center;font-size:36px;opacity:0;color:var(--mu)">no human relaying screenshots</div>
+</div>
+
+<div class="layer" id="end"><div class="abs" style="left:0;width:1200px;top:210px;text-align:center">
+  <div style="display:inline-block">${EYE('ee',170)}</div>
+  <div style="font-size:96px;font-weight:700;margin-top:14px">graea</div>
+  <div id="e1" style="font-size:50px;font-weight:600;color:var(--ac);margin-top:14px;opacity:0">source-available</div>
+  <div id="e2" class="mono" style="font-size:30px;margin-top:26px;opacity:0">github.com/estejosh/graea</div>
+  <div id="e3" style="font-size:28px;color:var(--mu);margin-top:16px;opacity:0">Usufruct License (UFL)</div></div></div>
+
+<div class="abs mono" id="cur" style="left:0;top:0;opacity:0;pointer-events:none">${ptr('#fff')}</div>
+<div class="abs mono" id="cur2" style="left:0;top:0;opacity:0;pointer-events:none">${ptr('#5b8cff')}</div>
+`;
+
+/* ---------- widgets ---------- */
+function chat(p,s){ // s: user,bot,press,spin,ring,note,badge
+  op(p+'-u',s.user||0);op(p+'-b',s.bot||0);op(p+'-k',s.bot||0);op(p+'-badge',s.badge||0);
+  $(p+'-o').className='kb'+(s.press?' on':'');
+  op(p+'-s',s.spin||0);$(p+'-s').style.transform=`rotate(${(s.t||0)*540}deg)`;
+  op(p+'-r',s.ring||0);op(p+'-n',s.note||0);
+}
+function rail(t,idx,vis){op('rail',vis);for(let i=0;i<6;i++){const e=$('rp'+i),a=(i===idx),d=(idx>i);
+  e.style.color=a?'#fff':(d?'var(--tx)':'var(--mu)');e.style.background=a?'var(--ac)':'transparent';e.style.borderColor=a?'var(--ac)':(d?'#4a5d96':'var(--line)')}}
+const ORDER=[155,544]; // Order button centre in box coords (chat at 60,165)
+
+/* ---------- scene scripts ---------- */
+function drawA(t){
+  const k=K, dyn={};
+  // S1 problem
+  const s1=win(t,-1,k.l4-.1,.2);op('s1',s1);
+  if(s1>0){
+    const [cx,cy]=path(t,[[k.l2+.1,900,330],[k.tap-.2,155,595]]);
+    chat('c1',{user:1,bot:1,press:t>=k.tap,spin:ramp(t,k.tap+.12,k.tap+.3),note:ramp(t,k.nothing+.25,k.nothing+.5),t});
+    $('a1t').textContent=typed('Done. The bot works.',lin(t,k.l1,k.works));
+    op('a1f',ramp(t,k.works-.3,k.works+.1));
+    const ts=ease(lin(t,k.shot,k.paste+.4));
+    tf('thumb',245+525*ts,385-55*ts,1-.3*ts);
+    op('thumb',ts>0&&ts<1?1:0);
+    op('a1y',ramp(t,k.paste+.2,k.paste+.5));$('a1h').textContent=typed('the button does nothing',lin(t,k.paste+.4,k.explain+1));
+    op('a1you',ramp(t,k.shot,k.shot+.3));
+  }
+  // S2 title
+  const s2=win(t,k.l4-.05,k.l5-.05,.2);op('ttl',s2);op('hdr',1-s2);
+  if(s2>0){op('ttlSub',ramp(t,k.eyes-.1,k.eyes+.3));
+    const g=Math.sin(t*2.2)*7;setEye('te',g,0,0);}
+  // S3-S5 pipeline
+  const s3=win(t,k.l5-.1,k.l8-.1,.2);op('s3',s3);
+  const idx=t<k.shot2?0:t<k.vision?1:t<k.l9?2:t<k.reads?3:t<k.l11?4:5;
+  rail(t,t<k.l5?-1:idx,win(t,k.l5,k.noh,.2));
+  if(s3>0){
+    chat('c3',{badge:ramp(t,k.l5,k.l5+.3),user:ramp(t,k.msgs,k.msgs+.25),bot:ramp(t,k.msgs+.9,k.msgs+1.2),
+      press:t>=k.taps+.1,spin:ramp(t,k.taps+.5,k.taps+.7),ring:ramp(t,k.saw-.2,k.saw+.2),t});
+    op('lg0',ramp(t,k.l5+.2,k.l5+.5));op('lg1',ramp(t,k.msgs,k.msgs+.3));op('lg2',ramp(t,k.taps,k.taps+.3));op('lg3',ramp(t,k.taps+.9,k.taps+1.2));
+    op('flash',t<k.shot2?0:1-ramp(t,k.shot2,k.shot2+.35));op('brk',win(t,k.shot2,k.l7,.2));
+    op('logp',1-ramp(t,k.shot2,k.shot2+.2));op('shp',ramp(t,k.shot2+.15,k.shot2+.45));
+    chat('cm',{user:1,bot:1,press:1,spin:1,t});
+    op('prov',1-ramp(t,k.l7-.2,k.l7+.1));
+    const pc=t>=k.choose?Math.floor((t-k.choose)*5)%4:-1;
+    for(let i=0;i<4;i++){const e=$('pv'+i);e.style.opacity=ramp(t,k.vision+i*.18,k.vision+i*.18+.25);e.style.visibility=e.style.opacity>.01?'visible':'hidden';
+      const on=(t>=k.choose+1.4)?(i===0):(i===pc);e.style.color=on?'#fff':'var(--mu)';e.style.background=on?'var(--ac)':'transparent';e.style.borderColor=on?'var(--ac)':'var(--line)'}
+    op('rdp',ramp(t,k.vision-.1,k.vision+.2));
+    op('rd0',ramp(t,k.order-.7,k.order-.4));op('rd1',ramp(t,k.saw-.1,k.saw+.2));op('rd2',ramp(t,k.cb-.1,k.cb+.2));op('stamp',ramp(t,k.answered,k.answered+.2));
+  }
+  // S6 bug gallery
+  const s6=win(t,k.l8-.1,k.l9-.1,.2);op('gal',s6);
+  [k.l8-.05,k.trunc-.15,k.miss-.15].forEach((a,i)=>{op('gr'+i,ramp(t,a,a+.3));op('gf'+i,ramp(t,k.catches+i*.18,k.catches+i*.18+.25))});
+  // S7/S11 database, runs, chart
+  const dbv=Math.max(win(t,k.l9-.1,k.mcp-.1,.2),win(t,k.l11-.1,k.noh-.05,.2));op('db',dbv);
+  if(dbv>0){
+    for(let i=0;i<3;i++)op('st'+i,ramp(t,k.duck+i*.5,k.duck+i*.5+.25));
+    op('rn0',ramp(t,k.run1,k.run1+.25));op('rn1',ramp(t,k.run2,k.run2+.25));op('rn2',ramp(t,k.l12,k.l12+.25));
+    [[3,k.run1],[1,k.run2],[0,k.l12]].forEach(([v,a],i)=>{const h=v*100*ramp(t,a,a+.5);const b=$('bar'+i);b.style.height=h+'px';b.style.opacity=ramp(t,a,a+.1);
+      op('bl'+i,ramp(t,a,a+.3));op('bv'+i,ramp(t,a+.2,a+.5));$('bv'+i).style.top=(405-h-34)+'px'});
+    op('dff',ramp(t,k.diff,k.diff+.3));
+  }
+  // S8 MCP + patch
+  const mv=win(t,k.mcp-.15,k.l11-.1,.2);op('mcp',mv);
+  if(mv>0){op('mj',0);MCP.forEach((n,i)=>op('mt'+i,ramp(t,k.mcp+i*.04,k.mcp+i*.04+.2)));
+    $('mcpn').textContent=Math.floor(clamp(lin(t,k.mcp,k.mcp+.7))*16)+' tools';
+    op('mr',ramp(t,k.reads-.3,k.reads));op('mdf',ramp(t,k.reads+.3,k.reads+.6));
+    const rm=ramp(t,k.patches+.3,k.patches+.7);$('rm1').style.opacity=1-.7*rm;$('rm2').style.opacity=1-.7*rm;
+    $('rm1').style.textDecoration=rm>.5?'line-through':'none';$('rm2').style.textDecoration=rm>.5?'line-through':'none'}
+  // S12 no human
+  const lv=win(t,k.noh-.1,k.l13-.1,.2);op('loop',lv);
+  if(lv>0){op('xx',ramp(t,k.relay-.5,k.relay));op('lpt',CAPS?0:ramp(t,k.relay-.2,k.relay+.2));
+    $('hum').style.opacity=1-.55*ramp(t,k.relay-.5,k.relay);setEye('le',Math.sin(t*2)*6,0,0)}
+  // end
+  const ev=ramp(t,k.l13-.15,k.l13+.2);op('end',ev);
+  op('e1',ramp(t,k.src-.1,k.src+.25));op('e2',ramp(t,k.src+.15,k.src+.45));op('e3',ramp(t,k.l14-.1,k.l14+.25));
+  setEye('ee',Math.sin(t*1.7)*7,0,0);
+  // illustrative tag
+  op('ill',win(t,k.l7,k.noh,.25));
+  // cursors
+  const hc=path(t,[[k.l2+.05,900,300],[k.tap-.15,ORDER[0]+4,ORDER[1]+6],[k.tap+.3,ORDER[0]+4,ORDER[1]+6]]);
+  $('cur').style.transform=`translate(${hc[0]}px,${hc[1]}px)`;op('cur',win(t,k.l2+.05,k.nothing+.8,.2)*(s1>0?1:0));
+  const gc=path(t,[[k.taps-1.0,900,520],[k.taps-.1,ORDER[0]+4,ORDER[1]+6],[k.taps+.4,ORDER[0]+4,ORDER[1]+6]]);
+  $('cur2').style.transform=`translate(${gc[0]}px,${gc[1]}px)`;op('cur2',win(t,k.taps-1.0,k.taps+1.2,.2));
+}
+
+function drawB(t){
+  const k=K;
+  // B1: the lie, the dead button
+  const s1=win(t,-1,k.l2-.1,.2);op('s1',s1);
+  if(s1>0){
+    const [cx,cy]=[0,0];
+    chat('c1',{user:1,bot:1,press:t>=k.btn+.2,spin:ramp(t,k.btn+.4,k.btn+.6),note:ramp(t,k.nothing+.1,k.nothing+.4),t});
+    $('a1t').textContent=typed('Done. The bot works.',lin(t,k.l1,k.works));op('a1f',ramp(t,k.works-.3,k.works));
+    op('thumb',0);op('a1y',0);op('a1you',0);
+  }
+  const hc=path(t,[[k.btn-.9,900,300],[k.btn+.1,ORDER[0]+4,ORDER[1]+6]]);
+  $('cur').style.transform=`translate(${hc[0]}px,${hc[1]}px)`;op('cur',win(t,k.btn-.9,k.nothing+.5,.2)*(s1>0?1:0));
+  // B2: act, capture, read
+  const s3=win(t,k.l2-.1,k.l3-.1,.2);op('s3',s3);
+  const idx=t<k.shot?0:t<k.reads?1:2;rail(t,t<k.l2?-1:(t>=k.l3?(t<k.l5?3:(t<k.again?4:5)):idx),win(t,k.l2-.1,k.noh,.2));
+  if(s3>0){
+    chat('c3',{badge:1,user:1,bot:1,press:t>=k.l2+.45,spin:ramp(t,k.l2+.7,k.l2+.9),ring:ramp(t,k.reads,k.reads+.3),t});
+    op('lg0',1);op('lg1',1);op('lg2',ramp(t,k.l2+.3,k.l2+.5));op('lg3',ramp(t,k.l2+.9,k.l2+1.1));
+    op('flash',t<k.shot?0:1-ramp(t,k.shot,k.shot+.35));op('brk',win(t,k.shot,k.l3,.2));
+    op('logp',1-ramp(t,k.shot,k.shot+.2));op('shp',ramp(t,k.shot+.15,k.shot+.45));chat('cm',{user:1,bot:1,press:1,spin:1,t});
+    op('prov',0);op('rdp',ramp(t,k.shot+.2,k.shot+.5));
+    op('rd0',ramp(t,k.reads-.1,k.reads+.15));op('rd1',ramp(t,k.reads+.25,k.reads+.5));op('rd2',ramp(t,k.reads+.5,k.reads+.75));op('stamp',ramp(t,k.reads+.7,k.reads+.9));
+  }
+  const gc=path(t,[[k.l2-.1,900,520],[k.l2+.35,ORDER[0]+4,ORDER[1]+6]]);
+  $('cur2').style.transform=`translate(${gc[0]}px,${gc[1]}px)`;op('cur2',win(t,k.l2-.1,k.l2+1.0,.2));
+  // B3 duckdb, B6 chart
+  const dbv=Math.max(win(t,k.l3-.1,k.l4-.1,.2),win(t,k.l6-.1,k.noh-.05,.2));op('db',dbv);
+  if(dbv>0){
+    for(let i=0;i<3;i++)op('st'+i,ramp(t,k.duck-1.2+i*.4,k.duck-1.2+i*.4+.25));
+    op('rn0',ramp(t,k.duck-.2,k.duck+.1));op('rn1',ramp(t,k.l6+.6,k.l6+.9));op('rn2',ramp(t,k.run3,k.run3+.25));
+    [[3,k.duck],[1,k.l6+.6],[0,k.run3]].forEach(([v,a],i)=>{const h=v*100*ramp(t,a,a+.5);const b=$('bar'+i);b.style.height=h+'px';b.style.opacity=ramp(t,a,a+.1);
+      op('bl'+i,ramp(t,a,a+.3));op('bv'+i,ramp(t,a+.2,a+.5));$('bv'+i).style.top=(405-h-34)+'px'});
+    op('dff',ramp(t,k.pass_,k.pass_+.3));
+  }
+  // B4 tells exactly, B5 patch
+  const mv=win(t,k.l4-.1,k.l6-.1,.2);op('mcp',mv);
+  if(mv>0){MCP.forEach((n,i)=>op('mt'+i,0.0));$('mcph').textContent='graea';$('mcpn').textContent='structured result';
+    op('mj',ramp(t,k.l4+.3,k.l4+.7));op('mr',ramp(t,k.where-.2,k.where+.2));
+    op('mdf',ramp(t,k.fixes-.1,k.fixes+.3));const rm=ramp(t,k.fixes+.3,k.fixes+.7);
+    $('rm1').style.textDecoration=rm>.5?'line-through':'none';$('rm2').style.textDecoration=rm>.5?'line-through':'none';
+    $('rm1').style.opacity=1-.7*rm;$('rm2').style.opacity=1-.7*rm}
+  // B7 no human
+  const lv=win(t,k.noh-.1,k.l7-.1,.2);op('loop',lv);
+  if(lv>0){op('xx',ramp(t,k.relay-.5,k.relay));op('lpt',CAPS?0:ramp(t,k.relay-.2,k.relay+.2));$('hum').style.opacity=1-.55*ramp(t,k.relay-.5,k.relay);setEye('le',Math.sin(t*2)*6,0,0)}
+  // B8 end
+  op('end',ramp(t,k.l7-.15,k.l7+.2));op('e1',ramp(t,k.src-.1,k.src+.25));op('e2',ramp(t,k.src+.15,k.src+.45));op('e3',ramp(t,k.usu-.1,k.usu+.25));
+  setEye('ee',Math.sin(t*1.7)*7,0,0);
+  op('ttl',0);op('gal',0);op('ill',win(t,k.l2,k.noh,.25));
+}
+
+/* ---------- entry ---------- */
+window.seek=function(t){
+  setEye('hl',Math.sin(t*1.3)*4,0,0);
+  (CUT==='A'?drawA:drawB)(t);
+  const c=C.caps.find(c=>t>=c.s-.02&&t<=c.e);
+  if(CAPS&&c){capT.textContent=c.t;capEl.style.opacity=ramp(t,c.s-.02,c.s+.1)*(1-ramp(t,c.e-.1,c.e))}else{capEl.style.opacity=0}
+  if(TC){const m=Math.floor(t/60),s=(t%60).toFixed(2).padStart(5,'0');$('tc').textContent=`cut ${CUT}  ${m}:${s}${c?'  | '+c.t:''}`}
+};
+document.fonts.ready.then(()=>{window.READY=true;window.seek(0)});
+</script>
+</body>
+</html>
