@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from telegram.constants import ParseMode
 
+from graea.demo import buggy_bot
 from graea.demo.buggy_bot import (
     ALL_BUGS,
     active_bugs,
@@ -14,7 +15,10 @@ from graea.demo.buggy_bot import (
     build_start,
     build_start_keyboard,
     build_status,
+    format_bugs_list,
     generate_status_photo_bytes,
+    record_rate_limit,
+    toggle_bug,
 )
 
 
@@ -95,6 +99,64 @@ def test_menu_keyboard_shape():
     rows = [[b.text for b in row] for row in kb.keyboard]
     assert rows == [["A", "B"], ["C"]]
 
+
+
+def test_toggle_bug_on_single():
+    assert toggle_bug(set(), "raw_markdown", True) == {"raw_markdown"}
+
+
+def test_toggle_bug_off_single():
+    assert toggle_bug({"raw_markdown", "dead_button"}, "raw_markdown", False) == {"dead_button"}
+
+
+def test_toggle_bug_on_all():
+    assert toggle_bug(set(), "all", True) == set(ALL_BUGS)
+
+
+def test_toggle_bug_off_all():
+    assert toggle_bug({"raw_markdown"}, "all", False) == set()
+
+
+def test_toggle_bug_unknown_name_is_none():
+    assert toggle_bug(set(), "not_a_bug", True) is None
+
+
+def test_per_chat_isolation(monkeypatch):
+    monkeypatch.setattr(buggy_bot, "chat_bugs", {})
+    monkeypatch.setattr(buggy_bot, "default_bugs", set())
+    buggy_bot.chat_bugs[111] = {"raw_markdown"}
+    assert buggy_bot.bugs_for_chat(111) == {"raw_markdown"}
+    assert buggy_bot.bugs_for_chat(222) == set()
+
+
+def test_default_bugs_from_env(monkeypatch):
+    monkeypatch.setenv("BUGS", "dead_button, silent_command")
+    monkeypatch.setattr(buggy_bot, "default_bugs", buggy_bot.active_bugs())
+    monkeypatch.setattr(buggy_bot, "chat_bugs", {})
+    assert buggy_bot.bugs_for_chat(999) == {"dead_button", "silent_command"}
+
+
+def test_format_bugs_list_lists_all_seven_with_state():
+    text = format_bugs_list({"raw_markdown"})
+    lines = text.splitlines()
+    assert len(lines) == 7
+    assert lines[0].startswith("raw_markdown [on]:")
+    assert any(line.startswith("dead_button [off]:") for line in lines)
+
+
+def test_rate_limit_allows_thirty_then_drops():
+    windows: dict = {}
+    for i in range(30):
+        assert record_rate_limit(windows, 42, float(i)) is True
+    assert record_rate_limit(windows, 42, 30.0) is False
+
+
+def test_rate_limit_window_slides():
+    windows: dict = {}
+    for i in range(30):
+        record_rate_limit(windows, 42, float(i))
+    # A minute later the window is empty again.
+    assert record_rate_limit(windows, 42, 100.0) is True
 
 def test_status_photo_bytes_is_a_png():
     data = generate_status_photo_bytes()
