@@ -302,3 +302,11 @@ turn the check off entirely — e.g. for an air-gapped environment.
 - `docs/SPEC.md` — the underlying contracts (models, protocol).
 - `docs/LLM-GUIDE.md` — how an LLM should drive the MCP tool loop.
 - `graea.agent.json` — this document, machine-readable.
+
+## Where this project lives
+- Code on beastly: `X:\ferry\repos\graea`
+- Code on grouchly: `/mnt/nvme-storage/repos/ferry/repos/graea`
+- Work in those copies and nowhere else. Any other checkout of this repo (for example X:\<name> directly on the drive) is retired and must not be edited.
+- Channel on beastly: `X:\ferry\comms\graea-ferryman`
+- Channel on grouchly: `/mnt/nvme-storage/repos/graea/.ferryman/ferryman`
+- Find it from any machine with `ferry root show`. Scratch space is `X:\ferry\tmp` (beastly).
