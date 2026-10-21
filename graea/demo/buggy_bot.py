@@ -377,6 +377,9 @@ def build_application(token: str, bugs: set[str]) -> Application:
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO)
+    # httpx logs every request URL at INFO, which embeds the bot token. Keep
+    # logs to counts and command names only — never secrets, text, or user ids.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
 
     token = os.environ.get("DEMO_BOT_TOKEN")
     if not token:
