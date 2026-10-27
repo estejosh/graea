@@ -24,9 +24,11 @@ Planted bugs (see docs/SPEC.md "Demo bot"):
 """
 from __future__ import annotations
 
+import functools
 import io
 import logging
 import os
+import time
 from typing import Optional
 
 from PIL import Image
@@ -37,7 +39,7 @@ from telegram import (
     ReplyKeyboardMarkup,
     Update,
 )
-from telegram.constants import ParseMode
+from telegram.constants import ChatType, ParseMode
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
@@ -78,6 +80,92 @@ def active_bugs() -> set[str]:
     """Return the set of bug names requested via the BUGS env var."""
     raw = os.environ.get("BUGS", "")
     return {b.strip() for b in raw.split(",") if b.strip()}
+
+
+BUG_DESCRIPTIONS: dict[str, str] = {
+    "raw_markdown": "/start text sent with no parse_mode; asterisks show literally.",
+    "truncated_button": "first /start button label is 60 characters long.",
+    "edit_as_new": 'pressing "Order" sends a new message instead of editing.',
+    "missing_caption": 'the "Status" photo is sent without a caption.',
+    "silent_command": '/help (and the inline "Help" action) never reply.',
+    "dead_button": "callback queries are never answered, leaving a stuck spinner.",
+    "wrong_keyboard_shape": "/start keyboard is 3 rows x 1 col instead of 1 row x 3 cols.",
+}
+
+# Per-chat bug state, held in memory (a restart resets it). `default_bugs` is
+# the BUGS env var at startup; a chat only diverges once it runs /bugs on|off.
+chat_bugs: dict[int, set[str]] = {}
+default_bugs: set[str] = active_bugs()
+
+RATE_LIMIT_PER_MINUTE = 30
+RATE_LIMIT_WINDOW_SECONDS = 60.0
+_rate_windows: dict[int, list[float]] = {}
+_rate_dropped = 0
+
+ABOUT_TEXT = (
+    "This is a test bot for Graea (github.com/estejosh/graea). "
+    "It is meant to be broken on purpose. Do not send personal information. "
+    "Messages are not stored. Graea is source-available."
+)
+
+
+def bugs_for_chat(chat_id: int) -> set[str]:
+    """The bug set for one chat: its own toggles, or the env default."""
+    return chat_bugs.get(chat_id, default_bugs)
+
+
+def toggle_bug(current: set[str], name: str, enable: bool) -> set[str] | None:
+    """Return a new bug set with `name` (or "all") toggled; None if invalid."""
+    if name == "all":
+        return set(ALL_BUGS) if enable else set()
+    if name not in ALL_BUGS:
+        return None
+    out = set(current)
+    if enable:
+        out.add(name)
+    else:
+        out.discard(name)
+    return out
+
+
+def format_bugs_list(bugs: set[str]) -> str:
+    """One line per bug: name [on|off]: what it does."""
+    return "\n".join(
+        f"{name} [{'on' if name in bugs else 'off'}]: {BUG_DESCRIPTIONS[name]}"
+        for name in ALL_BUGS
+    )
+
+
+def record_rate_limit(windows: dict[int, list[float]], user_id: int, now: float) -> bool:
+    """Record a hit for `user_id` at `now`; return False when over the limit."""
+    window = [t for t in windows.get(user_id, []) if now - t < RATE_LIMIT_WINDOW_SECONDS]
+    if len(window) >= RATE_LIMIT_PER_MINUTE:
+        windows[user_id] = window
+        return False
+    window.append(now)
+    windows[user_id] = window
+    return True
+
+
+def private_and_rate_limited(func):
+    """Run `func` for private chats only, silently dropping over-limit users."""
+
+    @functools.wraps(func)
+    async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        chat = update.effective_chat
+        if chat is None or chat.type != ChatType.PRIVATE:
+            return
+        user = update.effective_user
+        if user is None:
+            return
+        if record_rate_limit(_rate_windows, user.id, time.monotonic()):
+            await func(update, context)
+            return
+        global _rate_dropped
+        _rate_dropped += 1
+        logger.info("rate limit: dropped a message (total dropped: %d)", _rate_dropped)
+
+    return wrapper
 
 
 # ---------------------------------------------------------------------------
@@ -166,8 +254,9 @@ def generate_status_photo_bytes() -> bytes:
 # ---------------------------------------------------------------------------
 
 
+@private_and_rate_limited
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    bugs: set[str] = context.bot_data["bugs"]
+    bugs: set[str] = bugs_for_chat(update.effective_chat.id)
     built = build_start(bugs)
     await update.effective_message.reply_text(
         text=built["text"],
@@ -176,13 +265,15 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     )
 
 
+@private_and_rate_limited
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    bugs: set[str] = context.bot_data["bugs"]
+    bugs: set[str] = bugs_for_chat(update.effective_chat.id)
     if "silent_command" in bugs:
         return
     await update.effective_message.reply_text(HELP_TEXT)
 
 
+@private_and_rate_limited
 async def menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.effective_message.reply_text(
         "Choose one:", reply_markup=build_menu_keyboard()
@@ -195,11 +286,12 @@ async def _maybe_answer(query: CallbackQuery, bugs: set[str]) -> None:
     await query.answer()
 
 
+@private_and_rate_limited
 async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
-    bugs: set[str] = context.bot_data["bugs"]
     data = query.data
     chat_id = query.message.chat_id
+    bugs: set[str] = bugs_for_chat(chat_id)
 
     await _maybe_answer(query, bugs)
 
@@ -222,6 +314,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         await context.bot.send_message(chat_id=chat_id, text=HELP_TEXT)
 
 
+@private_and_rate_limited
 async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     text = (update.effective_message.text or "").strip()
     if text in ("A", "B", "C"):
@@ -230,22 +323,63 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await update.effective_message.reply_text(f"You said: {text}")
 
 
+@private_and_rate_limited
+async def bugs_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    chat_id = update.effective_chat.id
+    args = context.args or []
+    if not args:
+        await update.effective_message.reply_text(format_bugs_list(bugs_for_chat(chat_id)))
+        return
+    sub = args[0].lower()
+    name = args[1].lower() if len(args) > 1 else ""
+    if sub in ("on", "off") and name:
+        new = toggle_bug(bugs_for_chat(chat_id), name, sub == "on")
+        if new is None:
+            await update.effective_message.reply_text(
+                f"Unknown bug: {name}. Valid names: {', '.join(ALL_BUGS)}."
+            )
+            return
+        chat_bugs[chat_id] = new
+        await update.effective_message.reply_text(format_bugs_list(new))
+        return
+    await update.effective_message.reply_text(
+        "Usage: /bugs, /bugs on <name|all>, /bugs off <name|all>"
+    )
+
+
+@private_and_rate_limited
+async def about_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await update.effective_message.reply_text(ABOUT_TEXT)
+
+
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Log errors by class name only (never message text or user ids)."""
+    logger.error("update caused an error: %s", type(context.error).__name__)
+
+
 def build_application(token: str, bugs: set[str]) -> Application:
     """Assemble the Application with handlers and shared bot_data wired up."""
+    global default_bugs
+    default_bugs = bugs
     application = Application.builder().token(token).build()
-    application.bot_data["bugs"] = bugs
     application.bot_data["status_photo"] = generate_status_photo_bytes()
 
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("menu", menu_command))
+    application.add_handler(CommandHandler("bugs", bugs_command))
+    application.add_handler(CommandHandler("about", about_command))
     application.add_handler(CallbackQueryHandler(callback_handler))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
+    application.add_error_handler(error_handler)
     return application
 
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO)
+    # httpx logs every request URL at INFO, which embeds the bot token. Keep
+    # logs to counts and command names only — never secrets, text, or user ids.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
 
     token = os.environ.get("DEMO_BOT_TOKEN")
     if not token:
