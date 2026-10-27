@@ -136,8 +136,24 @@ def format_bugs_list(bugs: set[str]) -> str:
     )
 
 
+RATE_PRUNE_THRESHOLD = 1000
+
+
+def prune_rate_windows(windows: dict[int, list[float]], now: float) -> None:
+    """Drop users with no activity inside the window so the dict stays bounded."""
+    stale = [
+        uid
+        for uid, times in windows.items()
+        if not times or now - times[-1] >= RATE_LIMIT_WINDOW_SECONDS
+    ]
+    for uid in stale:
+        del windows[uid]
+
+
 def record_rate_limit(windows: dict[int, list[float]], user_id: int, now: float) -> bool:
     """Record a hit for `user_id` at `now`; return False when over the limit."""
+    if len(windows) > RATE_PRUNE_THRESHOLD:
+        prune_rate_windows(windows, now)
     window = [t for t in windows.get(user_id, []) if now - t < RATE_LIMIT_WINDOW_SECONDS]
     if len(window) >= RATE_LIMIT_PER_MINUTE:
         windows[user_id] = window
