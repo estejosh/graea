@@ -17,6 +17,8 @@ from graea.demo.buggy_bot import (
     build_status,
     format_bugs_list,
     generate_status_photo_bytes,
+    RATE_PRUNE_THRESHOLD,
+    prune_rate_windows,
     record_rate_limit,
     toggle_bug,
 )
@@ -162,3 +164,19 @@ def test_status_photo_bytes_is_a_png():
     data = generate_status_photo_bytes()
     assert data.startswith(b"\x89PNG\r\n\x1a\n")
     assert len(data) > 0
+
+
+def test_rate_windows_stay_bounded():
+    windows: dict[int, list[float]] = {}
+    for uid in range(RATE_PRUNE_THRESHOLD + 50):
+        record_rate_limit(windows, uid, 0.0)
+    assert len(windows) > RATE_PRUNE_THRESHOLD
+    # much later, a new hit triggers pruning of every stale user
+    assert record_rate_limit(windows, 999999, 1000.0) is True
+    assert list(windows) == [999999]
+
+
+def test_prune_keeps_active_users():
+    windows = {1: [100.0], 2: [10.0], 3: []}
+    prune_rate_windows(windows, 110.0)
+    assert set(windows) == {1}
