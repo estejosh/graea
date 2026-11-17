@@ -10,7 +10,11 @@ and captions are built from the words actually spoken (never from the script).
 
 usage: build_audio.py RAW_RECORDING TRANSCRIPT_JSON
 """
-import json, re, subprocess, sys, wave
+import json
+import re
+import subprocess
+import sys
+import wave
 from pathlib import Path
 import numpy as np
 
@@ -114,7 +118,9 @@ def main(raw, transcript):
 
         raw_wav = OUT / f"edit_{cut}.wav"
         with wave.open(str(raw_wav), "wb") as o:
-            o.setnchannels(1); o.setsampwidth(2); o.setframerate(SR)
+            o.setnchannels(1)
+            o.setsampwidth(2)
+            o.setframerate(SR)
             o.writeframes((np.clip(out, -1, 1) * 32767).astype(np.int16).tobytes())
         subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(raw_wav), "-af",
                         f"highpass=f=70,loudnorm=I=-16:TP=-1.5:LRA=11,afade=t=out:st={dur - 1.0:.2f}:d=1.0",

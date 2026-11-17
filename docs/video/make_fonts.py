@@ -2,10 +2,15 @@
 """Fetch Inter + JetBrains Mono (both OFL, latin subset) from npm and write fonts/fonts.css with the
 woff2 files embedded as data URIs, so graea.html renders offline. Run once before render.py.
 Generated files (fonts/*.woff2, fonts/fonts.css) are gitignored."""
-import base64, pathlib, shutil, subprocess, tempfile
+import base64
+import pathlib
+import shutil
+import subprocess
+import tempfile
 
 here = pathlib.Path(__file__).parent.resolve()
-out = here / "fonts"; out.mkdir(exist_ok=True)
+out = here / "fonts"
+out.mkdir(exist_ok=True)
 FACES = [("Inter", 400, "inter", "inter-latin-400-normal"), ("Inter", 600, "inter", "inter-latin-600-normal"),
          ("Inter", 700, "inter", "inter-latin-700-normal"), ("JBM", 400, "jetbrains-mono", "jetbrains-mono-latin-400-normal"),
          ("JBM", 500, "jetbrains-mono", "jetbrains-mono-latin-500-normal")]
